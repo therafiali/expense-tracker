@@ -1,8 +1,10 @@
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
 import { requestPermissions, scheduleDailyReminder } from '@/lib/notifications';
+import { getUserProfile } from '@/lib/storage';
+import { useRouter, useSegments } from 'expo-router';
+import { useState, useEffect } from 'react';
 import '../global.css';
 
 const CustomDarkTheme = {
@@ -17,15 +19,32 @@ const CustomDarkTheme = {
 };
 
 export default function RootLayout() {
+  const router = useRouter();
+  const segments = useSegments();
+  const [isReady, setIsReady] = useState(false);
+
   useEffect(() => {
-    async function setupNotifications() {
+    async function setup() {
+      // Setup notifications
       const hasPermission = await requestPermissions();
       if (hasPermission) {
         await scheduleDailyReminder();
       }
+
+      // Check onboarding
+      const profile = await getUserProfile();
+      const inAuthGroup = segments[0] === 'currency-setup';
+
+      if (!profile && !inAuthGroup) {
+        router.replace('/currency-setup');
+      }
+      
+      setIsReady(true);
     }
-    setupNotifications();
-  }, []);
+    setup();
+  }, [segments]);
+
+  if (!isReady) return null;
 
   return (
     <ThemeProvider value={CustomDarkTheme}>

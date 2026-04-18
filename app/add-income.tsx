@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { X, Calendar as CalendarIcon, Wallet } from 'lucide-react-native';
@@ -8,13 +8,18 @@ import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { saveTransaction } from '@/lib/storage';
+import { saveTransaction, getCurrencySymbol } from '@/lib/storage';
 
 export default function AddIncomeScreen() {
   const router = useRouter();
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(new Date());
+  const [currencySymbol, setCurrencySymbol] = useState('$');
+
+  useEffect(() => {
+    getCurrencySymbol().then(setCurrencySymbol);
+  }, []);
 
   const handleSave = async () => {
     if (!amount || isNaN(parseFloat(amount))) return;
@@ -55,7 +60,7 @@ export default function AddIncomeScreen() {
           <View className="mb-6">
             <Text className="text-white mb-2 ml-1 text-sm font-medium">Amount</Text>
             <View className="flex-row items-center bg-card rounded-2xl border border-white/5 px-4 h-16">
-              <Text className="text-white text-2xl mr-2">$</Text>
+              <Text className="text-white text-2xl mr-2">{currencySymbol}</Text>
               <TextInput
                 className="flex-1 text-white text-2xl font-bold"
                 placeholder="0.00"

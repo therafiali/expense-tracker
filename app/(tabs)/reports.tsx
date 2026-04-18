@@ -8,7 +8,7 @@ import * as Sharing from 'expo-sharing';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { getMonthData, getSummaries, getCategoryBreakdown, type MonthData, type Transaction, type Category } from '@/lib/storage';
+import { getMonthData, getSummaries, getCategoryBreakdown, getCurrencySymbol, type MonthData, type Transaction, type Category } from '@/lib/storage';
 import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/components/category-icon';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +17,7 @@ export default function ReportsScreen() {
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [loading, setLoading] = useState(false);
+  const [currencySymbol, setCurrencySymbol] = useState('$');
 
   useEffect(() => {
     loadData();
@@ -24,8 +25,12 @@ export default function ReportsScreen() {
 
   const loadData = async () => {
     setLoading(true);
-    const monthData = await getMonthData(currentDate);
+    const [monthData, symbol] = await Promise.all([
+      getMonthData(currentDate),
+      getCurrencySymbol()
+    ]);
     setData(monthData);
+    setCurrencySymbol(symbol);
     setLoading(false);
   };
 
@@ -60,9 +65,9 @@ export default function ReportsScreen() {
             <p>${format(currentDate, 'MMMM yyyy')}</p>
           </div>
           <div class="summary">
-            <div class="card"><h3>Total Income</h3><p>$${totalIncome.toFixed(2)}</p></div>
-            <div class="card"><h3>Total Expenses</h3><p>$${totalExpenses.toFixed(2)}</p></div>
-            <div class="card"><h3>Net Balance</h3><p>$${balance.toFixed(2)}</p></div>
+            <div class="card"><h3>Total Income</h3><p>${currencySymbol}${totalIncome.toFixed(2)}</p></div>
+            <div class="card"><h3>Total Expenses</h3><p>${currencySymbol}${totalExpenses.toFixed(2)}</p></div>
+            <div class="card"><h3>Net Balance</h3><p>${currencySymbol}${balance.toFixed(2)}</p></div>
           </div>
           <h2>Transaction History</h2>
           <table>
@@ -82,7 +87,7 @@ export default function ReportsScreen() {
                   <td>${format(new Date(t.date), 'MMM dd')}</td>
                   <td><span class="category-tag" style="background: ${t.type === 'income' ? '#D1FAE5' : '#FEE2E2'}; color: ${t.type === 'income' ? '#065F46' : '#991B1B'}">${t.category || (t.type === 'income' ? 'Income' : 'Other')}</span></td>
                   <td>${t.note || '-'}</td>
-                  <td style="color: ${t.type === 'income' ? '#10B981' : '#EF4444'}"><b>${t.type === 'income' ? '+' : '-'}$${t.amount.toFixed(2)}</b></td>
+                  <td style="color: ${t.type === 'income' ? '#10B981' : '#EF4444'}"><b>${t.type === 'income' ? '+' : '-'}${currencySymbol}${t.amount.toFixed(2)}</b></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -118,7 +123,7 @@ export default function ReportsScreen() {
         <ScrollView className="flex-1 px-4 py-6">
           <Card className="p-6 mb-8 items-center bg-accent/5 border-accent/20">
             <Text className="text-muted text-sm mb-2">Total spent in {selectedCategory}</Text>
-            <Text className="text-white text-4xl font-bold">${catTotal.toFixed(2)}</Text>
+            <Text className="text-white text-4xl font-bold">{currencySymbol}{catTotal.toFixed(2)}</Text>
           </Card>
           
           <Text className="text-white font-semibold mb-4">Transactions</Text>
@@ -133,7 +138,7 @@ export default function ReportsScreen() {
                     <Text className="text-white font-medium">{t.note || 'No note'}</Text>
                     <Text className="text-muted text-xs">{format(new Date(t.date), 'PPPP')}</Text>
                   </View>
-                  <Text className="text-red-400 font-bold">-${t.amount.toFixed(2)}</Text>
+                  <Text className="text-red-400 font-bold">-{currencySymbol}{t.amount.toFixed(2)}</Text>
                 </Card>
               ))
           )}
@@ -175,12 +180,12 @@ export default function ReportsScreen() {
           <Card className="flex-1 p-4 border-emerald-500/20">
             <TrendingUp size={20} color="#10B981" className="mb-2" />
             <Text className="text-muted text-xs">Monthly Income</Text>
-            <Text className="text-emerald-500 text-xl font-bold">${totalIncome.toFixed(0)}</Text>
+            <Text className="text-emerald-500 text-xl font-bold">{currencySymbol}{totalIncome.toFixed(0)}</Text>
           </Card>
           <Card className="flex-1 p-4 border-red-500/20">
             <TrendingDown size={20} color="#EF4444" className="mb-2" />
             <Text className="text-muted text-xs">Monthly Spending</Text>
-            <Text className="text-red-400 text-xl font-bold">${totalExpenses.toFixed(0)}</Text>
+            <Text className="text-red-400 text-xl font-bold">{currencySymbol}{totalExpenses.toFixed(0)}</Text>
           </Card>
         </View>
 
@@ -220,7 +225,7 @@ export default function ReportsScreen() {
                             <Text className="text-muted text-xs">{item.percentage.toFixed(1)}% of total</Text>
                           </View>
                         </View>
-                        <Text className="text-white font-bold">${item.amount.toFixed(0)}</Text>
+                        <Text className="text-white font-bold">{currencySymbol}{item.amount.toFixed(0)}</Text>
                       </View>
                       <View className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
                         <View 
@@ -247,7 +252,7 @@ export default function ReportsScreen() {
                     <TrendingDown size={24} color="#EF4444" />
                   </View>
                   <View>
-                    <Text className="text-white font-bold">${highestExpense.amount.toFixed(2)}</Text>
+                    <Text className="text-white font-bold">{currencySymbol}{highestExpense.amount.toFixed(2)}</Text>
                     <Text className="text-muted text-xs">{highestExpense.note || highestExpense.category}</Text>
                   </View>
                 </View>

@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { getMonthData, getSummaries, getCategoryBreakdown, type MonthData, type Transaction } from '@/lib/storage';
+import { getMonthData, getSummaries, getCategoryBreakdown, getCurrencySymbol, type MonthData, type Transaction } from '@/lib/storage';
 import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/components/category-icon';
 import { cn } from '@/lib/utils';
 
@@ -19,11 +19,16 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const isFocused = useIsFocused();
   const router = useRouter();
+  const [currencySymbol, setCurrencySymbol] = useState('$');
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const monthData = await getMonthData(currentDate);
+    const [monthData, symbol] = await Promise.all([
+      getMonthData(currentDate),
+      getCurrencySymbol()
+    ]);
     setData(monthData);
+    setCurrencySymbol(symbol);
     setLoading(false);
   }, [currentDate]);
 
@@ -68,15 +73,15 @@ export default function DashboardScreen() {
         <View className="flex-row gap-3 mb-6">
           <Card className="flex-1 p-3 items-center justify-center">
             <Text className="text-muted text-xs mb-1">Income</Text>
-            <Text className="text-emerald-500 font-bold text-lg">${totalIncome.toFixed(0)}</Text>
+            <Text className="text-emerald-500 font-bold text-lg">{currencySymbol}{totalIncome.toFixed(0)}</Text>
           </Card>
           <Card className="flex-1 p-3 items-center justify-center">
             <Text className="text-muted text-xs mb-1">Expenses</Text>
-            <Text className="text-red-400 font-bold text-lg">${totalExpenses.toFixed(0)}</Text>
+            <Text className="text-red-400 font-bold text-lg">{currencySymbol}{totalExpenses.toFixed(0)}</Text>
           </Card>
           <Card className="flex-1 p-3 items-center justify-center border-accent/20">
             <Text className="text-muted text-xs mb-1">Balance</Text>
-            <Text className="text-white font-bold text-lg">${balance.toFixed(0)}</Text>
+            <Text className="text-white font-bold text-lg">{currencySymbol}{balance.toFixed(0)}</Text>
           </Card>
         </View>
 
@@ -152,7 +157,7 @@ export default function DashboardScreen() {
                     </View>
                     <View className="items-end">
                       <Text className={cn("font-bold", t.type === 'income' ? "text-emerald-500" : "text-white")}>
-                        {t.type === 'income' ? '+' : '-'}${t.amount.toFixed(2)}
+                        {t.type === 'income' ? '+' : '-'}{currencySymbol}{t.amount.toFixed(2)}
                       </Text>
                       {t.type === 'expense' && (
                         <Text className="text-[10px] text-muted">{format(new Date(t.date), 'MMM d')}</Text>

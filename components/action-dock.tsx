@@ -43,9 +43,9 @@ export function ActionDock() {
     { 
       id: 'settings', 
       icon: Settings, 
-      label: 'More', 
+      label: 'Profile', 
       color: '#9CA3AF', 
-      onPress: () => console.log('Settings clicked') 
+      onPress: () => router.push('/profile') 
     },
   ];
 

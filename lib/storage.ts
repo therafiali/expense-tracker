@@ -12,6 +12,12 @@ export interface Transaction {
   type: 'income' | 'expense';
 }
 
+export interface UserProfile {
+  name: string;
+  email?: string;
+  currency: string;
+}
+
 export interface MonthData {
   income: Transaction[];
   expenses: Transaction[];
@@ -73,4 +79,51 @@ export const getCategoryBreakdown = (expenses: Transaction[]) => {
       percentage: total > 0 ? (b.amount / total) * 100 : 0
     }))
     .sort((a, b) => b.amount - a.amount);
+};
+
+export const getUserProfile = async (): Promise<UserProfile | null> => {
+  try {
+    const data = await AsyncStorage.getItem('user_profile');
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error('Error fetching profile:', error);
+    return null;
+  }
+};
+
+export const saveUserProfile = async (profile: UserProfile) => {
+  try {
+    await AsyncStorage.setItem('user_profile', JSON.stringify(profile));
+  } catch (error) {
+    console.error('Error saving profile:', error);
+  }
+};
+
+export const getCurrency = async (): Promise<string> => {
+  const profile = await getUserProfile();
+  return profile?.currency || 'USD';
+};
+
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  INR: '₹',
+  CAD: 'CA$',
+  AUD: 'A$',
+  CNY: 'CN¥',
+  PKR: '₨',
+  AED: 'د.إ',
+  SAR: '﷼',
+  SGD: 'S$',
+  BRL: 'R$',
+  RUB: '₽',
+  TRY: '₺',
+  KRW: '₩',
+};
+
+export const getCurrencySymbol = async (): Promise<string> => {
+  const code = await getCurrency();
+  return CURRENCY_SYMBOLS[code] || '$';
 };
