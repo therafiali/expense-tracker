@@ -1,176 +1,255 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, ScrollView, TouchableOpacity, Text, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, addMonths, subMonths } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, ArrowUpRight, ArrowDownLeft } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft } from 'lucide-react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
 
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { getMonthData, getSummaries, getCategoryBreakdown, getCurrencySymbol, type MonthData, type Transaction } from '@/lib/storage';
+import {
+  getMonthData,
+  getSummaries,
+  type MonthData,
+  type Transaction,
+} from '@/lib/storage';
 import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/components/category-icon';
-import { cn } from '@/lib/utils';
 
-export default function DashboardScreen() {
+import { useTheme } from '@/lib/theme';
+
+export default function HomeScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const isFocused = useIsFocused();
-  const router = useRouter();
-  const [currencySymbol, setCurrencySymbol] = useState('$');
+  const { colors, isDark } = useTheme();
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [monthData, symbol] = await Promise.all([
-      getMonthData(currentDate),
-      getCurrencySymbol()
-    ]);
+    const monthData = await getMonthData(currentDate);
     setData(monthData);
-    setCurrencySymbol(symbol);
     setLoading(false);
   }, [currentDate]);
 
   useEffect(() => {
-    if (isFocused) {
-      loadData();
-    }
+    if (isFocused) loadData();
   }, [isFocused, loadData]);
 
   const { totalIncome, totalExpenses, balance } = getSummaries(data);
-  const breakdown = getCategoryBreakdown(data.expenses);
-  const recentTransactions = [...data.income, ...data.expenses]
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 10);
 
-  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const allTransactions: Transaction[] = [
+    ...data.income.map((t) => ({ ...t, type: 'income' as const })),
+    ...data.expenses.map((t) => ({ ...t, type: 'expense' as const })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={['top']}>
-      <ScrollView 
-        className="flex-1 px-4"
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} tintColor="#10B981" />}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={loadData} tintColor="#10B981" />
+        }
+        showsVerticalScrollIndicator={false}
       >
-        {/* Header & Month Switcher */}
-        <View className="flex-row items-center justify-between py-6">
-          <Text className="text-2xl font-bold text-white">WalletWatch</Text>
-          <View className="flex-row items-center bg-card rounded-full px-3 py-1.5 border border-white/5">
-            <TouchableOpacity onPress={prevMonth} className="p-1">
-              <ChevronLeft size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-            <Text className="text-white font-medium px-4 min-w-[120px] text-center">
-              {format(currentDate, 'MMMM yyyy')}
-            </Text>
-            <TouchableOpacity onPress={nextMonth} className="p-1">
-              <ChevronRight size={20} color="#9CA3AF" />
-            </TouchableOpacity>
+        {/* Header */}
+        <View style={styles.topHeader}>
+          <View>
+            <Text style={[styles.greeting, { color: colors.text }]}>WalletWatch</Text>
+            <Text style={[styles.subGreeting, { color: colors.muted }]}>{format(new Date(), 'EEEE, d MMMM')}</Text>
           </View>
         </View>
 
-        {/* Summary Cards */}
-        <View className="flex-row gap-3 mb-6">
-          <Card className="flex-1 p-3 items-center justify-center">
-            <Text className="text-muted text-xs mb-1">Income</Text>
-            <Text className="text-emerald-500 font-bold text-lg">{currencySymbol}{totalIncome.toFixed(0)}</Text>
-          </Card>
-          <Card className="flex-1 p-3 items-center justify-center">
-            <Text className="text-muted text-xs mb-1">Expenses</Text>
-            <Text className="text-red-400 font-bold text-lg">{currencySymbol}{totalExpenses.toFixed(0)}</Text>
-          </Card>
-          <Card className="flex-1 p-3 items-center justify-center border-accent/20">
-            <Text className="text-muted text-xs mb-1">Balance</Text>
-            <Text className="text-white font-bold text-lg">{currencySymbol}{balance.toFixed(0)}</Text>
-          </Card>
+        {/* Balance Card */}
+        <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.balanceLabel, { color: colors.muted }]}>Total Balance</Text>
+          <Text style={[styles.balanceValue, { color: balance >= 0 ? colors.text : '#EF4444' }]}>
+            {balance < 0 ? '-' : ''}{Math.abs(balance).toFixed(2)}
+          </Text>
+          {/* Month switcher */}
+          <View style={styles.monthRow}>
+            <TouchableOpacity onPress={() => setCurrentDate(subMonths(currentDate, 1))} style={[styles.chevronBtn, { backgroundColor: colors.card2 }]}>
+              <ChevronLeft size={16} color={colors.subtext} />
+            </TouchableOpacity>
+            <Text style={[styles.monthText, { color: colors.subtext }]}>{format(currentDate, 'MMMM yyyy')}</Text>
+            <TouchableOpacity onPress={() => setCurrentDate(addMonths(currentDate, 1))} style={[styles.chevronBtn, { backgroundColor: colors.card2 }]}>
+              <ChevronRight size={16} color={colors.subtext} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Income / Expense strip */}
+          <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
+            <View style={styles.statItem}>
+              <View style={[styles.statDot, { backgroundColor: '#10B981' }]} />
+              <View>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Income</Text>
+                <Text style={styles.statIncome}>{totalIncome.toFixed(0)}</Text>
+              </View>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.statItem}>
+              <View style={[styles.statDot, { backgroundColor: '#EF4444' }]} />
+              <View>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Expenses</Text>
+                <Text style={styles.statExpense}>{totalExpenses.toFixed(0)}</Text>
+              </View>
+            </View>
+          </View>
         </View>
 
-        {/* Visual Breakdown */}
-        {breakdown.length > 0 && (
-          <View className="mb-8">
-            <Text className="text-white font-semibold mb-4">Spending Breakdown</Text>
-            <Card className="p-4">
-              <View className="h-3 w-full bg-white/5 rounded-full overflow-hidden flex-row mb-4">
-                {breakdown.map((item, index) => (
-                  <View 
-                    key={item.category}
-                    style={{ 
-                      width: `${item.percentage}%`, 
-                      backgroundColor: CATEGORY_COLORS[item.category] 
-                    }}
-                    className="h-full"
-                  />
-                ))}
-              </View>
-              <View className="flex-row flex-wrap gap-x-4 gap-y-2">
-                {breakdown.slice(0, 4).map((item) => (
-                  <View key={item.category} className="flex-row items-center gap-2">
-                    <View 
-                      className="w-2 h-2 rounded-full" 
-                      style={{ backgroundColor: CATEGORY_COLORS[item.category] }} 
-                    />
-                    <Text className="text-muted text-xs">{item.category}</Text>
-                    <Text className="text-white text-xs font-medium">{item.percentage.toFixed(0)}%</Text>
+        {/* Transactions */}
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>All Transactions</Text>
+
+        {allTransactions.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.emptyText, { color: colors.muted }]}>No transactions this month yet.</Text>
+            <Text style={[styles.emptySubText, { color: colors.placeholder }]}>Tap + to add your first one!</Text>
+          </View>
+        ) : (
+          <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {allTransactions.map((t, i) => {
+              const isIncome = t.type === 'income';
+              const Icon = isIncome
+                ? ArrowUpRight
+                : t.category
+                ? CATEGORY_ICONS[t.category]
+                : ArrowDownLeft;
+              const color = isIncome
+                ? '#10B981'
+                : t.category
+                ? CATEGORY_COLORS[t.category]
+                : '#EF4444';
+
+              return (
+                <View
+                  key={t.id || `${t.date}-${i}`}
+                  style={[
+                    styles.txRow,
+                    i < allTransactions.length - 1 && [styles.txRowBorder, { borderBottomColor: colors.border2 }],
+                  ]}
+                >
+                  <View style={[styles.txIcon, { backgroundColor: color + '18' }]}>
+                    <Icon size={18} color={color} />
                   </View>
-                ))}
-              </View>
-            </Card>
+                  <View style={styles.txMeta}>
+                    <Text style={[styles.txTitle, { color: colors.text }]} numberOfLines={1}>
+                      {isIncome ? 'Income' : t.category}
+                    </Text>
+                    <Text style={[styles.txNote, { color: colors.muted }]} numberOfLines={1}>
+                      {t.note || format(new Date(t.date), 'MMM d, h:mm a')}
+                    </Text>
+                  </View>
+                  <View style={styles.txRight}>
+                    <Text style={[styles.txAmount, { color: isIncome ? '#10B981' : '#EF4444' }]}>
+                      {isIncome ? '+' : '-'}{t.amount.toFixed(2)}
+                    </Text>
+                    <Text style={[styles.txDate, { color: colors.placeholder }]}>{format(new Date(t.date), 'MMM d')}</Text>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         )}
 
-        {/* Recent Transactions */}
-        <View className="mb-10">
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-white font-semibold">Recent Transactions</Text>
-            {recentTransactions.length > 0 && (
-              <TouchableOpacity>
-                <Text className="text-accent text-xs">See All</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          {recentTransactions.length === 0 ? (
-            <Card className="p-10 items-center justify-center border-dashed border-white/10 bg-transparent">
-              <Text className="text-muted text-center italic">No transactions this month yet.</Text>
-            </Card>
-          ) : (
-            <View className="gap-3">
-              {recentTransactions.map((t) => {
-                const Icon = t.type === 'income' ? ArrowUpRight : (t.category ? CATEGORY_ICONS[t.category] : ArrowDownLeft);
-                const color = t.type === 'income' ? '#10B981' : (t.category ? CATEGORY_COLORS[t.category] : '#EF4444');
-                
-                return (
-                  <Card key={t.id} className="flex-row items-center p-3">
-                    <View 
-                      className="w-10 h-10 rounded-xl items-center justify-center mr-3"
-                      style={{ backgroundColor: `${color}20` }}
-                    >
-                      <Icon size={20} color={color} />
-                    </View>
-                    <View className="flex-1">
-                      <Text className="text-white font-medium">
-                        {t.type === 'income' ? 'Income' : t.category}
-                      </Text>
-                      <Text className="text-muted text-xs" numberOfLines={1}>
-                        {t.note || format(new Date(t.date), 'MMM d, h:mm a')}
-                      </Text>
-                    </View>
-                    <View className="items-end">
-                      <Text className={cn("font-bold", t.type === 'income' ? "text-emerald-500" : "text-white")}>
-                        {t.type === 'income' ? '+' : '-'}{currencySymbol}{t.amount.toFixed(2)}
-                      </Text>
-                      {t.type === 'expense' && (
-                        <Text className="text-[10px] text-muted">{format(new Date(t.date), 'MMM d')}</Text>
-                      )}
-                    </View>
-                  </Card>
-                );
-              })}
-            </View>
-          )}
-        </View>
-        <View className="h-32" />
+        <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: 16, paddingBottom: 20 },
+  topHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  greeting: { fontSize: 22, fontWeight: '800' },
+  subGreeting: { fontSize: 13, marginTop: 2 },
+  // Balance Card
+  balanceCard: {
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    gap: 8,
+  },
+  balanceLabel: { fontSize: 13, fontWeight: '500' },
+  balanceValue: { fontSize: 36, fontWeight: '800', letterSpacing: -1 },
+  monthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  chevronBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthText: { fontSize: 14, fontWeight: '600' },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 8,
+  },
+  statItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statDot: { width: 8, height: 8, borderRadius: 4 },
+  statLabel: { fontSize: 11 },
+  statIncome: { fontSize: 15, fontWeight: '700', color: '#10B981' },
+  statExpense: { fontSize: 15, fontWeight: '700', color: '#EF4444' },
+  statDivider: { width: 1, height: 32, marginHorizontal: 8 },
+  // Section
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  // Empty
+  emptyCard: {
+    borderRadius: 16,
+    padding: 36,
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  emptyText: { fontSize: 14 },
+  emptySubText: { fontSize: 12 },
+  // Transaction list
+  txList: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  txRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  txRowBorder: {
+    borderBottomWidth: 1,
+  },
+  txIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  txMeta: { flex: 1 },
+  txTitle: { fontSize: 14, fontWeight: '600' },
+  txNote: { fontSize: 12, marginTop: 1 },
+  txRight: { alignItems: 'flex-end' },
+  txAmount: { fontSize: 14, fontWeight: '700' },
+  txDate: { fontSize: 11, marginTop: 2 },
+});

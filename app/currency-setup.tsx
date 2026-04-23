@@ -24,10 +24,13 @@ const CURRENCIES = [
   { code: 'KRW', name: 'South Korean Won', symbol: '₩' },
 ];
 
+import { useTheme } from '@/lib/theme';
+
 export default function CurrencySetup() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('USD');
   const router = useRouter();
+  const { colors, isDark } = useTheme();
 
   const filtered = CURRENCIES.filter(
     c => c.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -44,18 +47,18 @@ export default function CurrencySetup() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Select Currency</Text>
-        <Text style={styles.subtitle}>Choose your primary currency for tracking expenses.</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Select Currency</Text>
+        <Text style={[styles.subtitle, { color: colors.subtext }]}>Choose your primary currency for tracking expenses.</Text>
       </View>
 
-      <View style={styles.searchContainer}>
-        <Search size={20} color="#9CA3AF" style={styles.searchIcon} />
+      <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+        <Search size={20} color={colors.subtext} style={styles.searchIcon} />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search currency..."
-          placeholderTextColor="#6B7280"
+          placeholderTextColor={colors.placeholder}
           value={search}
           onChangeText={setSearch}
         />
@@ -67,14 +70,18 @@ export default function CurrencySetup() {
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
           <TouchableOpacity 
-            style={[styles.item, selected === item.code && styles.selectedItem]}
+            style={[
+              styles.item, 
+              { backgroundColor: colors.card, borderColor: colors.border },
+              selected === item.code && [styles.selectedItem, { borderColor: '#10B981', backgroundColor: '#10B98110' }]
+            ]}
             onPress={() => setSelected(item.code)}
           >
             <View style={styles.itemInfo}>
-              <Text style={styles.itemSymbol}>{item.symbol}</Text>
+              <Text style={[styles.itemSymbol, { color: colors.text }]}>{item.symbol}</Text>
               <View>
-                <Text style={styles.itemName}>{item.name}</Text>
-                <Text style={styles.itemCode}>{item.code}</Text>
+                <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
+                <Text style={[styles.itemCode, { color: colors.subtext }]}>{item.code}</Text>
               </View>
             </View>
             {selected === item.code && (
@@ -96,7 +103,6 @@ export default function CurrencySetup() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F0F',
   },
   header: {
     padding: 24,
@@ -105,18 +111,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#9CA3AF',
     lineHeight: 24,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A1A',
     margin: 24,
     marginTop: 0,
     paddingHorizontal: 16,
@@ -128,7 +131,6 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: '#FFFFFF',
     fontSize: 16,
   },
   list: {
@@ -138,17 +140,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1A1A1A',
     padding: 16,
     borderRadius: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'transparent',
   },
-  selectedItem: {
-    borderColor: '#10B981',
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
-  },
+  selectedItem: {},
   itemInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -156,18 +153,15 @@ const styles = StyleSheet.create({
   },
   itemSymbol: {
     fontSize: 24,
-    color: '#FFFFFF',
     width: 40,
     textAlign: 'center',
   },
   itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
   },
   itemCode: {
     fontSize: 12,
-    color: '#9CA3AF',
     marginTop: 2,
   },
   footer: {

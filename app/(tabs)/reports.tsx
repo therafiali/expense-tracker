@@ -1,272 +1,308 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, TouchableOpacity, Share, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
-import { ChevronLeft, ChevronRight, FileDown, TrendingDown, TrendingUp, PieChart, ArrowLeft } from 'lucide-react-native';
+import { format, subMonths } from 'date-fns';
+import { ChevronLeft, ChevronRight, Download, ArrowUpRight, ArrowDownLeft } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { useIsFocused } from '@react-navigation/native';
 
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { getMonthData, getSummaries, getCategoryBreakdown, getCurrencySymbol, type MonthData, type Transaction, type Category } from '@/lib/storage';
+import {
+  getMonthData,
+  getSummaries,
+  getCurrencySymbol,
+  type MonthData,
+  type Transaction,
+} from '@/lib/storage';
 import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/components/category-icon';
-import { cn } from '@/lib/utils';
+
+import { useTheme } from '@/lib/theme';
 
 export default function ReportsScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [loading, setLoading] = useState(false);
-  const [currencySymbol, setCurrencySymbol] = useState('$');
+  const [exporting, setExporting] = useState(false);
+  const isFocused = useIsFocused();
+  const { colors } = useTheme();
 
   useEffect(() => {
-    loadData();
-  }, [currentDate]);
+    if (isFocused) loadData();
+  }, [isFocused, currentDate]);
 
   const loadData = async () => {
     setLoading(true);
-    const [monthData, symbol] = await Promise.all([
-      getMonthData(currentDate),
-      getCurrencySymbol()
-    ]);
+    const monthData = await getMonthData(currentDate);
     setData(monthData);
-    setCurrencySymbol(symbol);
     setLoading(false);
   };
 
   const { totalIncome, totalExpenses, balance } = getSummaries(data);
-  const breakdown = getCategoryBreakdown(data.expenses);
-  const highestExpense = [...data.expenses].sort((a, b) => b.amount - a.amount)[0];
 
-  const nextMonth = () => setCurrentDate(subMonths(currentDate, -1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const allTx: Transaction[] = [
+    ...data.income.map((t) => ({ ...t, type: 'income' as const })),
+    ...data.expenses.map((t) => ({ ...t, type: 'expense' as const })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const exportPDF = async () => {
+  const handleExport = async () => {
+    setExporting(true);
+    const currencySymbol = await getCurrencySymbol();
     const html = `
-      <html>
-        <head>
-          <style>
-            body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #333; }
-            h1 { color: #10B981; margin-bottom: 5px; }
-            .header { border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 30px; }
-            .summary { display: flex; justify-content: space-between; margin-bottom: 40px; }
-            .card { background: #f9f9f9; padding: 20px; border-radius: 10px; flex: 1; margin: 0 10px; text-align: center; }
-            .card h3 { margin: 0; font-size: 14px; color: #666; }
-            .card p { margin: 10px 0 0; font-size: 24px; font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; }
-            th { text-align: left; border-bottom: 1px solid #eee; padding: 10px; color: #666; }
-            td { padding: 10px; border-bottom: 1px solid #eee; }
-            .category-tag { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>WalletWatch Report</h1>
-            <p>${format(currentDate, 'MMMM yyyy')}</p>
-          </div>
-          <div class="summary">
-            <div class="card"><h3>Total Income</h3><p>${currencySymbol}${totalIncome.toFixed(2)}</p></div>
-            <div class="card"><h3>Total Expenses</h3><p>${currencySymbol}${totalExpenses.toFixed(2)}</p></div>
-            <div class="card"><h3>Net Balance</h3><p>${currencySymbol}${balance.toFixed(2)}</p></div>
-          </div>
-          <h2>Transaction History</h2>
-          <table>
-            <thead>
+      <html><head><style>
+        body { font-family: Helvetica, sans-serif; padding: 40px; color: #111; }
+        h1 { color: #10B981; margin-bottom: 4px; }
+        .sub { color: #666; margin-bottom: 30px; }
+        .summary { display:flex; gap:16px; margin-bottom:30px; }
+        .card { flex:1; background:#f4f4f4; border-radius:10px; padding:16px; text-align:center; }
+        .card h3 { margin:0 0 8px; font-size:12px; color:#777; }
+        .card p { margin:0; font-size:22px; font-weight:bold; }
+        table { width:100%; border-collapse:collapse; font-size:13px; }
+        th { text-align:left; padding:10px 8px; border-bottom:2px solid #eee; color:#444; }
+        td { padding:10px 8px; border-bottom:1px solid #f0f0f0; }
+        .inc { color:#10B981; font-weight:bold; }
+        .exp { color:#EF4444; font-weight:bold; }
+      </style></head><body>
+        <h1>WalletWatch Report</h1>
+        <p class="sub">${format(currentDate, 'MMMM yyyy')}</p>
+        <div class="summary">
+          <div class="card"><h3>Income</h3><p style="color:#10B981">${currencySymbol}${totalIncome.toFixed(2)}</p></div>
+          <div class="card"><h3>Expenses</h3><p style="color:#EF4444">${currencySymbol}${totalExpenses.toFixed(2)}</p></div>
+          <div class="card"><h3>Balance</h3><p>${currencySymbol}${balance.toFixed(2)}</p></div>
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th>Type / Category</th><th>Note</th><th>Amount</th></tr></thead>
+          <tbody>
+            ${allTx.map(t => `
               <tr>
-                <th>Date</th>
-                <th>Category</th>
-                <th>Note</th>
-                <th>Amount</th>
+                <td>${format(new Date(t.date), 'MMM dd')}</td>
+                <td>${t.type === 'income' ? 'Income' : t.category || 'Expense'}</td>
+                <td>${t.note || '-'}</td>
+                <td class="${t.type === 'income' ? 'inc' : 'exp'}">${t.type === 'income' ? '+' : '-'}${currencySymbol}${t.amount.toFixed(2)}</td>
               </tr>
-            </thead>
-            <tbody>
-              ${[...data.income, ...data.expenses]
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .map(t => `
-                <tr>
-                  <td>${format(new Date(t.date), 'MMM dd')}</td>
-                  <td><span class="category-tag" style="background: ${t.type === 'income' ? '#D1FAE5' : '#FEE2E2'}; color: ${t.type === 'income' ? '#065F46' : '#991B1B'}">${t.category || (t.type === 'income' ? 'Income' : 'Other')}</span></td>
-                  <td>${t.note || '-'}</td>
-                  <td style="color: ${t.type === 'income' ? '#10B981' : '#EF4444'}"><b>${t.type === 'income' ? '+' : '-'}${currencySymbol}${t.amount.toFixed(2)}</b></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </body>
-      </html>
+            `).join('')}
+          </tbody>
+        </table>
+      </body></html>
     `;
-
     try {
       const { uri } = await Print.printToFileAsync({ html });
-      if (Platform.OS === 'ios') {
-        await Sharing.shareAsync(uri);
-      } else {
-        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Export Report' });
-      }
-    } catch (error) {
-      console.error('Error generating PDF:', error);
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Export Report' });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
     }
   };
 
-  if (selectedCategory) {
-    const categoryTransactions = data.expenses.filter(t => t.category === selectedCategory);
-    const catTotal = categoryTransactions.reduce((sum, t) => sum + t.amount, 0);
-
-    return (
-      <SafeAreaView className="flex-1 bg-background">
-        <View className="flex-row items-center px-4 py-4 border-b border-white/5">
-          <TouchableOpacity onPress={() => setSelectedCategory(null)} className="mr-4">
-            <ArrowLeft color="#9CA3AF" size={24} />
-          </TouchableOpacity>
-          <Text className="text-white font-bold text-lg">{selectedCategory} Details</Text>
-        </View>
-        <ScrollView className="flex-1 px-4 py-6">
-          <Card className="p-6 mb-8 items-center bg-accent/5 border-accent/20">
-            <Text className="text-muted text-sm mb-2">Total spent in {selectedCategory}</Text>
-            <Text className="text-white text-4xl font-bold">{currencySymbol}{catTotal.toFixed(2)}</Text>
-          </Card>
-          
-          <Text className="text-white font-semibold mb-4">Transactions</Text>
-          {categoryTransactions.length === 0 ? (
-            <Text className="text-muted italic">No transactions found.</Text>
-          ) : (
-            categoryTransactions
-              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-              .map(t => (
-                <Card key={t.id} className="flex-row items-center p-4 mb-3">
-                  <View className="flex-1">
-                    <Text className="text-white font-medium">{t.note || 'No note'}</Text>
-                    <Text className="text-muted text-xs">{format(new Date(t.date), 'PPPP')}</Text>
-                  </View>
-                  <Text className="text-red-400 font-bold">-{currencySymbol}{t.amount.toFixed(2)}</Text>
-                </Card>
-              ))
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <ScrollView className="flex-1 px-4">
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
-        <View className="flex-row items-center justify-between py-6">
-          <Text className="text-2xl font-bold text-white">Analytics</Text>
-          <TouchableOpacity 
-            onPress={exportPDF}
-            className="flex-row items-center bg-accent/10 border border-accent/20 px-3 py-1.5 rounded-full"
+        <View style={styles.headerRow}>
+          <Text style={[styles.pageTitle, { color: colors.text }]}>Reports</Text>
+          <TouchableOpacity
+            style={styles.exportBtn}
+            onPress={handleExport}
+            disabled={exporting || allTx.length === 0}
+            activeOpacity={0.8}
           >
-            <FileDown size={18} color="#10B981" />
-            <Text className="text-accent text-sm font-medium ml-2">Export PDF</Text>
+            {exporting ? (
+              <ActivityIndicator size="small" color="#10B981" />
+            ) : (
+              <>
+                <Download size={15} color="#10B981" />
+                <Text style={styles.exportText}>Download PDF</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* Month Selector */}
-        <View className="flex-row items-center justify-center mb-8">
-          <TouchableOpacity onPress={prevMonth} className="p-2 bg-card rounded-full border border-white/5">
-            <ChevronLeft size={20} color="#9CA3AF" />
+        {/* Month switcher */}
+        <View style={styles.monthRow}>
+          <TouchableOpacity onPress={() => setCurrentDate(subMonths(currentDate, 1))} style={[styles.chevronBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ChevronLeft size={18} color={colors.subtext} />
           </TouchableOpacity>
-          <Text className="text-white font-bold px-6 text-lg">
-            {format(currentDate, 'MMMM yyyy')}
-          </Text>
-          <TouchableOpacity onPress={nextMonth} className="p-2 bg-card rounded-full border border-white/5">
-            <ChevronRight size={20} color="#9CA3AF" />
+          <Text style={[styles.monthText, { color: colors.text }]}>{format(currentDate, 'MMMM yyyy')}</Text>
+          <TouchableOpacity onPress={() => setCurrentDate(subMonths(currentDate, -1))} style={[styles.chevronBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ChevronRight size={18} color={colors.subtext} />
           </TouchableOpacity>
         </View>
 
-        {/* Summary Stats */}
-        <View className="flex-row gap-4 mb-8">
-          <Card className="flex-1 p-4 border-emerald-500/20">
-            <TrendingUp size={20} color="#10B981" className="mb-2" />
-            <Text className="text-muted text-xs">Monthly Income</Text>
-            <Text className="text-emerald-500 text-xl font-bold">{currencySymbol}{totalIncome.toFixed(0)}</Text>
-          </Card>
-          <Card className="flex-1 p-4 border-red-500/20">
-            <TrendingDown size={20} color="#EF4444" className="mb-2" />
-            <Text className="text-muted text-xs">Monthly Spending</Text>
-            <Text className="text-red-400 text-xl font-bold">{currencySymbol}{totalExpenses.toFixed(0)}</Text>
-          </Card>
-        </View>
-
-        {/* Category Breakdown (Enhanced) */}
-        <View className="mb-8">
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-white font-bold text-lg">Category Analytics</Text>
-            <PieChart size={20} color="#9CA3AF" />
+        {/* Summary */}
+        <View style={styles.summaryRow}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.summaryLabel, { color: colors.muted }]}>Income</Text>
+            <Text style={[styles.summaryValue, { color: '#10B981' }]}>
+              {totalIncome.toFixed(0)}
+            </Text>
           </View>
-          
-          {breakdown.length === 0 ? (
-            <Card className="p-8 items-center border-dashed border-white/10 bg-transparent">
-              <Text className="text-muted italic">No spending data for this month.</Text>
-            </Card>
-          ) : (
-            <View className="gap-4">
-              {breakdown.map((item) => {
-                const Icon = CATEGORY_ICONS[item.category];
-                const color = CATEGORY_COLORS[item.category];
-                return (
-                  <TouchableOpacity 
-                    key={item.category}
-                    onPress={() => setSelectedCategory(item.category)}
-                    activeOpacity={0.7}
-                  >
-                    <Card className="p-4 border-white/5">
-                      <View className="flex-row items-center justify-between mb-3">
-                        <View className="flex-row items-center gap-3">
-                          <View 
-                            className="w-10 h-10 rounded-xl items-center justify-center"
-                            style={{ backgroundColor: `${color}15` }}
-                          >
-                            <Icon size={20} color={color} />
-                          </View>
-                          <View>
-                            <Text className="text-white font-semibold">{item.category}</Text>
-                            <Text className="text-muted text-xs">{item.percentage.toFixed(1)}% of total</Text>
-                          </View>
-                        </View>
-                        <Text className="text-white font-bold">{currencySymbol}{item.amount.toFixed(0)}</Text>
-                      </View>
-                      <View className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                        <View 
-                          className="h-full rounded-full" 
-                          style={{ width: `${item.percentage}%`, backgroundColor: color }} 
-                        />
-                      </View>
-                    </Card>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
+          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.summaryLabel, { color: colors.muted }]}>Expenses</Text>
+            <Text style={[styles.summaryValue, { color: '#EF4444' }]}>
+              {totalExpenses.toFixed(0)}
+            </Text>
+          </View>
+          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.summaryLabel, { color: colors.muted }]}>Balance</Text>
+            <Text style={[styles.summaryValue, { color: balance >= 0 ? '#10B981' : '#EF4444' }]}>
+              {Math.abs(balance).toFixed(0)}
+            </Text>
+          </View>
         </View>
 
-        {/* Highest Expense Insights */}
-        {highestExpense && (
-          <View className="mb-10">
-            <Text className="text-white font-bold text-lg mb-4">Highest Spending</Text>
-            <Card className="p-4 border-red-500/30 bg-red-500/5">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-3">
-                  <View className="w-12 h-12 bg-red-500/20 rounded-full items-center justify-center">
-                    <TrendingDown size={24} color="#EF4444" />
+        {/* Transactions */}
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Transactions</Text>
+
+        {loading ? (
+          <ActivityIndicator color="#10B981" style={{ marginTop: 24 }} />
+        ) : allTx.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.emptyText, { color: colors.muted }]}>No transactions for {format(currentDate, 'MMMM yyyy')}.</Text>
+          </View>
+        ) : (
+          <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {allTx.map((t, i) => {
+              const isIncome = t.type === 'income';
+              const Icon = isIncome
+                ? ArrowUpRight
+                : t.category
+                ? CATEGORY_ICONS[t.category]
+                : ArrowDownLeft;
+              const color = isIncome
+                ? '#10B981'
+                : t.category
+                ? CATEGORY_COLORS[t.category]
+                : '#EF4444';
+
+              return (
+                <View
+                  key={t.id || `${t.date}-${i}`}
+                  style={[styles.txRow, { borderBottomColor: colors.border2 }, i < allTx.length - 1 && styles.txRowBorder]}
+                >
+                  <View style={[styles.txIcon, { backgroundColor: color + '18' }]}>
+                    <Icon size={18} color={color} />
                   </View>
-                  <View>
-                    <Text className="text-white font-bold">{currencySymbol}{highestExpense.amount.toFixed(2)}</Text>
-                    <Text className="text-muted text-xs">{highestExpense.note || highestExpense.category}</Text>
+                  <View style={styles.txMeta}>
+                    <Text style={[styles.txTitle, { color: colors.text }]}>{isIncome ? 'Income' : t.category}</Text>
+                    <Text style={[styles.txNote, { color: colors.muted }]} numberOfLines={1}>
+                      {t.note || format(new Date(t.date), 'MMM d, h:mm a')}
+                    </Text>
+                  </View>
+                  <View style={styles.txRight}>
+                    <Text style={[styles.txAmount, { color: isIncome ? '#10B981' : '#EF4444' }]}>
+                      {isIncome ? '+' : '-'}{t.amount.toFixed(2)}
+                    </Text>
+                    <Text style={[styles.txDate, { color: colors.placeholder }]}>{format(new Date(t.date), 'MMM d')}</Text>
                   </View>
                 </View>
-                <View className="items-end">
-                  <Text className="text-red-400 font-medium text-xs">Top Expense</Text>
-                  <Text className="text-muted text-[10px]">{format(new Date(highestExpense.date), 'MMM d, yyyy')}</Text>
-                </View>
-              </View>
-            </Card>
+              );
+            })}
           </View>
         )}
 
-        <View className="h-32" />
+        <View style={{ height: 80 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: 16, paddingBottom: 20 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  pageTitle: { fontSize: 24, fontWeight: '800' },
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#10B98118',
+    borderWidth: 1,
+    borderColor: '#10B98130',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  exportText: { fontSize: 13, fontWeight: '600', color: '#10B981' },
+  monthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    marginBottom: 20,
+  },
+  chevronBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  monthText: {
+    fontSize: 16,
+    fontWeight: '700',
+    minWidth: 140,
+    textAlign: 'center',
+  },
+  summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  summaryCard: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+  },
+  summaryLabel: { fontSize: 11, fontWeight: '500' },
+  summaryValue: { fontSize: 16, fontWeight: '800' },
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  emptyCard: {
+    borderRadius: 14,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  emptyText: { fontSize: 14 },
+  txList: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  txRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  txRowBorder: {
+    borderBottomWidth: 1,
+  },
+  txIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  txMeta: { flex: 1 },
+  txTitle: { fontSize: 14, fontWeight: '600' },
+  txNote: { fontSize: 12, marginTop: 1 },
+  txRight: { alignItems: 'flex-end' },
+  txAmount: { fontSize: 14, fontWeight: '700' },
+  txDate: { fontSize: 11, marginTop: 2 },
+});

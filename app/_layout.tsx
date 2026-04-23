@@ -1,44 +1,29 @@
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { requestPermissions, scheduleDailyReminder } from '@/lib/notifications';
 import { getUserProfile } from '@/lib/storage';
 import { useRouter, useSegments } from 'expo-router';
 import { useState, useEffect } from 'react';
+import { ThemeProvider, useTheme } from '@/lib/theme';
 import '../global.css';
 
-const CustomDarkTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: '#0F0F0F',
-    card: '#1A1A1A',
-    text: '#FFFFFF',
-    border: '#ffffff10',
-  },
-};
-
-export default function RootLayout() {
+function RootLayoutContent() {
   const router = useRouter();
   const segments = useSegments();
   const [isReady, setIsReady] = useState(false);
+  const { colors, isDark } = useTheme();
 
   useEffect(() => {
     async function setup() {
-      // Setup notifications
       const hasPermission = await requestPermissions();
-      if (hasPermission) {
-        await scheduleDailyReminder();
-      }
+      if (hasPermission) await scheduleDailyReminder();
 
-      // Check onboarding
       const profile = await getUserProfile();
       const inAuthGroup = segments[0] === 'currency-setup';
-
       if (!profile && !inAuthGroup) {
         router.replace('/currency-setup');
       }
-      
       setIsReady(true);
     }
     setup();
@@ -46,26 +31,47 @@ export default function RootLayout() {
 
   if (!isReady) return null;
 
+  const navTheme = isDark ? {
+    ...DarkTheme,
+    colors: {
+      ...DarkTheme.colors,
+      background: colors.bg,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+    },
+  } : {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      background: colors.bg,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
+
   return (
-    <ThemeProvider value={CustomDarkTheme}>
+    <NavigationThemeProvider value={navTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen 
-          name="add-income" 
-          options={{ 
+        <Stack.Screen
+          name="add-transaction"
+          options={{
             presentation: 'modal',
-            animation: 'slide_from_bottom'
-          }} 
-        />
-        <Stack.Screen 
-          name="add-expense" 
-          options={{ 
-            presentation: 'modal',
-            animation: 'slide_from_bottom'
-          }} 
+            animation: 'slide_from_bottom',
+          }}
         />
       </Stack>
-      <StatusBar style="light" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+    </NavigationThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootLayoutContent />
     </ThemeProvider>
   );
 }

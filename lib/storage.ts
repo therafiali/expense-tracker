@@ -1,29 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { format } from 'date-fns';
+import { pushTransaction, syncProfile } from './sync';
+import { Category, Transaction, UserProfile, MonthData, getMonthKey, CURRENCY_SYMBOLS } from './types';
 
-export type Category = 'Food' | 'Petrol' | 'Repair' | 'Shopping' | 'Course' | 'Education' | 'Other';
-
-export interface Transaction {
-  id: string;
-  amount: number;
-  date: string; // ISO string
-  note?: string;
-  category?: Category;
-  type: 'income' | 'expense';
-}
-
-export interface UserProfile {
-  name: string;
-  email?: string;
-  currency: string;
-}
-
-export interface MonthData {
-  income: Transaction[];
-  expenses: Transaction[];
-}
-
-export const getMonthKey = (date: Date) => `data_${format(date, 'yyyy_MM')}`;
+export { Category, Transaction, UserProfile, MonthData, getMonthKey };
 
 export const getMonthData = async (date: Date): Promise<MonthData> => {
   try {
@@ -43,12 +22,16 @@ export const saveTransaction = async (date: Date, transaction: Transaction) => {
   const data = await getMonthData(date);
   
   if (transaction.type === 'income') {
-    data.income.unshift(transaction); // Add to start for "recent" first
+    data.income.unshift(transaction); 
   } else {
     data.expenses.unshift(transaction);
   }
   
+  // Save locally first for instant UI feedback
   await AsyncStorage.setItem(key, JSON.stringify(data));
+  
+  // Push to cloud in the background
+  pushTransaction(transaction).catch(err => console.error('Background sync failed:', err));
 };
 
 export const getSummaries = (data: MonthData) => {
@@ -94,6 +77,8 @@ export const getUserProfile = async (): Promise<UserProfile | null> => {
 export const saveUserProfile = async (profile: UserProfile) => {
   try {
     await AsyncStorage.setItem('user_profile', JSON.stringify(profile));
+    // Push to cloud in the background
+    syncProfile(profile).catch(err => console.error('Profile sync failed:', err));
   } catch (error) {
     console.error('Error saving profile:', error);
   }
@@ -102,25 +87,6 @@ export const saveUserProfile = async (profile: UserProfile) => {
 export const getCurrency = async (): Promise<string> => {
   const profile = await getUserProfile();
   return profile?.currency || 'USD';
-};
-
-export const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  JPY: '¥',
-  INR: '₹',
-  CAD: 'CA$',
-  AUD: 'A$',
-  CNY: 'CN¥',
-  PKR: '₨',
-  AED: 'د.إ',
-  SAR: '﷼',
-  SGD: 'S$',
-  BRL: 'R$',
-  RUB: '₽',
-  TRY: '₺',
-  KRW: '₩',
 };
 
 export const getCurrencySymbol = async (): Promise<string> => {
