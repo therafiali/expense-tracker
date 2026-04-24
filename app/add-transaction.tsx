@@ -11,8 +11,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { X, Fuel, Utensils, Wrench, ShoppingBag, BookOpen, GraduationCap, CircleEllipsis, Wallet } from 'lucide-react-native';
-import { saveTransaction, type Category } from '@/lib/storage';
+import { X, Fuel, Utensils, Wrench, ShoppingBag, BookOpen, GraduationCap, CircleEllipsis, Wallet, Plus, Tag } from 'lucide-react-native';
+import { saveTransaction, getRecentNotes, getCategories, addCategory, type Category, type NoteSuggestion } from '@/lib/storage';
+
+const ICON_MAP: Record<string, any> = {
+  Fuel,
+  Utensils,
+  Wrench,
+  ShoppingBag,
+  BookOpen,
+  GraduationCap,
+  CircleEllipsis,
+  Tag,
+};
 
 type TxType = 'expense' | 'income';
 
@@ -24,15 +35,7 @@ interface CategoryDef {
   bg: string;
 }
 
-const EXPENSE_CATEGORIES: CategoryDef[] = [
-  { id: 'Petrol', label: 'Petrol', icon: Fuel, color: '#3B82F6', bg: '#EFF6FF' },
-  { id: 'Food', label: 'Food', icon: Utensils, color: '#F59E0B', bg: '#FFFBEB' },
-  { id: 'Repair', label: 'Repair', icon: Wrench, color: '#6366F1', bg: '#EEF2FF' },
-  { id: 'Shopping', label: 'Shopping', icon: ShoppingBag, color: '#EC4899', bg: '#FDF2F8' },
-  { id: 'Course', label: 'Course', icon: BookOpen, color: '#8B5CF6', bg: '#F5F3FF' },
-  { id: 'Education', label: 'Education', icon: GraduationCap, color: '#10B981', bg: '#ECFDF5' },
-  { id: 'Other', label: 'Other', icon: CircleEllipsis, color: '#6B7280', bg: '#F9FAFB' },
-];
+// EXPENSE_CATEGORIES is now fetched from storage
 
 import { useTheme } from '@/lib/theme';
 
@@ -43,9 +46,39 @@ export default function AddTransactionScreen() {
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
+  const [allRecentNotes, setAllRecentNotes] = useState<NoteSuggestion[]>([]);
+  const [filteredNotes, setFilteredNotes] = useState<NoteSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  
+  const [categories, setCategories] = useState<any[]>([]);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+
   const noteRef = useRef<TextInput>(null);
   const amountRef = useRef<TextInput>(null);
   const { colors, isDark } = useTheme();
+
+  // Load recent notes and categories on mount
+  useEffect(() => {
+    getRecentNotes().then(setAllRecentNotes);
+    getCategories().then(setCategories);
+  }, []);
+
+  // Update suggestions when note changes
+  useEffect(() => {
+    if (!note) {
+      setFilteredNotes([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const filtered = allRecentNotes.filter(s => 
+      s.note.toLowerCase().includes(note.toLowerCase()) && 
+      s.note.toLowerCase() !== note.toLowerCase()
+    );
+    setFilteredNotes(filtered.slice(0, 5));
+    setShowSuggestions(filtered.length > 0);
+  }, [note, allRecentNotes]);
 
 
 
@@ -54,9 +87,21 @@ export default function AddTransactionScreen() {
     if (type === 'income') setSelectedCategory(null);
   }, [type]);
 
-  const handleCategorySelect = (cat: CategoryDef) => {
-    setSelectedCategory(cat.id);
+  const handleCategorySelect = (catId: string) => {
+    setSelectedCategory(catId);
     // Auto-open keyboard on the note field
+    setTimeout(() => noteRef.current?.focus(), 50);
+  };
+
+  const handleAddCategory = async () => {
+    if (!newCatName.trim()) return;
+    const newCat = await addCategory(newCatName.trim());
+    if (newCat) {
+      setCategories([...categories, newCat]);
+      setSelectedCategory(newCat.id);
+    }
+    setNewCatName('');
+    setIsAddingCategory(false);
     setTimeout(() => noteRef.current?.focus(), 50);
   };
 
@@ -126,39 +171,68 @@ export default function AddTransactionScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Category Icons (only for expense) */}
+          {/* Category Grid (only for expense) */}
           {type === 'expense' && (
             <View style={styles.section}>
               <Text style={[styles.sectionLabel, { color: colors.muted }]}>Category</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoryRow}
-              >
-                {EXPENSE_CATEGORIES.map((cat) => {
+              
+              <View style={styles.categoryGrid}>
+                {categories.map((cat) => {
                   const isSelected = selectedCategory === cat.id;
-                  const IconComp = cat.icon;
+                  const IconComp = ICON_MAP[cat.icon] || Tag;
                   return (
                     <TouchableOpacity
                       key={cat.id}
                       style={[
-                        styles.categoryItem,
+                        styles.categoryItemSmall,
                         { backgroundColor: colors.card },
-                        isSelected && { borderColor: cat.color, borderWidth: 2 },
+                        isSelected && { borderColor: cat.color, borderWidth: 1.5 },
                       ]}
-                      onPress={() => handleCategorySelect(cat)}
+                      onPress={() => handleCategorySelect(cat.id)}
                       activeOpacity={0.75}
                     >
-                      <View style={[styles.categoryIconBg, { backgroundColor: isSelected ? cat.color + '20' : colors.card2 }]}>
-                        <IconComp size={22} color={isSelected ? cat.color : colors.subtext} />
+                      <View style={[styles.categoryIconBgSmall, { backgroundColor: isSelected ? cat.color + '15' : colors.card2 }]}>
+                        <IconComp size={16} color={isSelected ? cat.color : colors.subtext} />
                       </View>
-                      <Text style={[styles.categoryLabel, { color: colors.subtext }, isSelected && { color: cat.color }]}>
+                      <Text 
+                        style={[styles.categoryLabelSmall, { color: colors.subtext }, isSelected && { color: cat.color, fontWeight: '700' }]}
+                        numberOfLines={1}
+                      >
                         {cat.label}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
-              </ScrollView>
+                
+                {/* Add Category Button */}
+                {!isAddingCategory ? (
+                  <TouchableOpacity
+                    style={[styles.categoryItemSmall, { backgroundColor: colors.card, borderStyle: 'dashed', borderWidth: 1, borderColor: colors.border }]}
+                    onPress={() => setIsAddingCategory(true)}
+                  >
+                    <View style={[styles.categoryIconBgSmall, { backgroundColor: colors.card2 }]}>
+                      <Plus size={16} color={colors.subtext} />
+                    </View>
+                    <Text style={[styles.categoryLabelSmall, { color: colors.subtext }]}>Add New</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={[styles.newCatInputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <TextInput
+                      autoFocus
+                      style={[styles.newCatInput, { color: colors.text }]}
+                      placeholder="Name..."
+                      placeholderTextColor={colors.placeholder}
+                      value={newCatName}
+                      onChangeText={setNewCatName}
+                      onSubmitEditing={handleAddCategory}
+                      returnKeyType="done"
+                    />
+                    <TouchableOpacity onPress={handleAddCategory} style={styles.newCatAddBtn}>
+                      <Plus size={16} color="#10B981" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </View>
           )}
 
@@ -182,9 +256,37 @@ export default function AddTransactionScreen() {
               placeholderTextColor={colors.placeholder}
               value={note}
               onChangeText={setNote}
+              onFocus={() => setShowSuggestions(filteredNotes.length > 0)}
               returnKeyType="next"
               onSubmitEditing={() => amountRef.current?.focus()}
             />
+            {showSuggestions && (
+              <View style={styles.suggestionsContainer}>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="always"
+                >
+                  {filteredNotes.map((suggestion, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.suggestionChip, { backgroundColor: colors.card2, borderColor: colors.border }]}
+                      onPress={() => {
+                        setNote(suggestion.note);
+                        setAmount(suggestion.amount.toString());
+                        setShowSuggestions(false);
+                        // Focus amount briefly then you can just save
+                        amountRef.current?.focus();
+                      }}
+                    >
+                      <Text style={[styles.suggestionText, { color: colors.subtext }]}>
+                        {suggestion.note} • {suggestion.amount}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
           {/* Amount */}
@@ -289,32 +391,50 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  // Categories
-  categoryRow: {
+  // Categories Grid
+  categoryGrid: {
     flexDirection: 'row',
-    gap: 12,
-    paddingBottom: 4,
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  categoryItem: {
+  categoryItemSmall: {
     alignItems: 'center',
-    gap: 6,
-    borderRadius: 14,
-    padding: 12,
-    minWidth: 70,
-    borderWidth: 2,
+    flexDirection: 'row',
+    gap: 8,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width: '31.5%', // Approx 3 columns
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
-  categoryIconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+  categoryIconBgSmall: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  categoryLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
+  categoryLabelSmall: {
+    fontSize: 12,
+    flex: 1,
+  },
+  newCatInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    width: '65%',
+    height: 44,
+    borderWidth: 1,
+  },
+  newCatInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 8,
+  },
+  newCatAddBtn: {
+    padding: 4,
   },
   // Income hint
   incomeHint: {
@@ -339,6 +459,22 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     borderWidth: 1,
+  },
+  // Suggestions
+  suggestionsContainer: {
+    marginTop: 8,
+    flexDirection: 'row',
+  },
+  suggestionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginRight: 8,
+    borderWidth: 1,
+  },
+  suggestionText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   // Amount
   amountRow: {

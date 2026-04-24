@@ -28,6 +28,7 @@ import {
 import { getUserProfile, saveUserProfile, UserProfile } from '@/lib/storage';
 import { useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
+import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { syncAll } from '@/lib/sync';
 import { Session } from '@supabase/supabase-js';
@@ -315,7 +316,9 @@ export default function ProfileScreen() {
                 <>
                   <View style={[styles.versionBadge, { backgroundColor: colors.border }]}>
                     <View style={styles.greenDot} />
-                    <Text style={[styles.versionText, { color: colors.subtext }]}>v1.0.2</Text>
+                    <Text style={[styles.versionText, { color: colors.subtext }]}>
+                      v{Constants.expoConfig?.version || '1.0.0'}
+                    </Text>
                   </View>
                   <ChevronRight size={16} color={colors.placeholder} />
                 </>

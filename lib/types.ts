@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 
-export type Category = 'Food' | 'Petrol' | 'Repair' | 'Shopping' | 'Course' | 'Education' | 'Other';
+export type Category = string;
 
 export interface Transaction {
   id?: string;

@@ -2,7 +2,7 @@
   "expo": {
     "name": "aco",
     "slug": "aco",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "aco",
@@ -54,7 +54,7 @@
         "projectId": "1e4b3def-6913-430a-8521-862a69494788"
       }
     },
-    "runtimeVersion": "1.0.1",
+    "runtimeVersion": "1.0.3",
     "updates": {
       "url": "https://u.expo.dev/1e4b3def-6913-430a-8521-862a69494788"
     }
