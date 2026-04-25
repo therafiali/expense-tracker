@@ -33,6 +33,7 @@ import { supabase } from '@/lib/supabase';
 import { syncAll } from '@/lib/sync';
 import { Session } from '@supabase/supabase-js';
 import { useTheme } from '@/lib/theme';
+import { APP_VERSION } from '@/constants/version';
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile>({ name: '', email: '', currency: 'USD' });
@@ -121,7 +122,7 @@ export default function ProfileScreen() {
     try {
       const update = await Updates.checkForUpdateAsync();
       if (update.isAvailable) {
-        Alert.alert('Update available', 'A new version is ready. Install now?', [
+        Alert.alert('Update available', `Version ${APP_VERSION} is ready. Install now?`, [
           { text: 'Later', style: 'cancel', onPress: () => setUpdating(false) },
           {
             text: 'Install',
@@ -132,11 +133,22 @@ export default function ProfileScreen() {
           },
         ]);
       } else {
-        Alert.alert('Up to date', 'You are on the latest version.');
-        setUpdating(false);
+        // Double check if there's a runtime version mismatch
+        const currentVersion = Constants.expoConfig?.version;
+        if (currentVersion && currentVersion !== APP_VERSION) {
+          Alert.alert(
+            'New version available',
+            `A newer version (v${APP_VERSION}) exists, but it requires a store update. Please download the latest build.`,
+            [{ text: 'OK', onPress: () => setUpdating(false) }]
+          );
+        } else {
+          Alert.alert('Up to date', 'You are on the latest version.');
+          setUpdating(false);
+        }
       }
-    } catch {
-      Alert.alert('Error', 'Failed to check for updates.');
+    } catch (error) {
+      console.error('Update check error:', error);
+      Alert.alert('Error', 'Failed to check for updates. Make sure you have a stable connection.');
       setUpdating(false);
     }
   };
@@ -317,7 +329,7 @@ export default function ProfileScreen() {
                   <View style={[styles.versionBadge, { backgroundColor: colors.border }]}>
                     <View style={styles.greenDot} />
                     <Text style={[styles.versionText, { color: colors.subtext }]}>
-                      v{Constants.expoConfig?.version || '1.0.0'}
+                      v{APP_VERSION}
                     </Text>
                   </View>
                   <ChevronRight size={16} color={colors.placeholder} />

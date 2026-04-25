@@ -54,7 +54,7 @@
         "projectId": "1e4b3def-6913-430a-8521-862a69494788"
       }
     },
-    "runtimeVersion": "1.0.3",
+    "runtimeVersion": "1.0.0", // Fixed runtime version to allow OTA updates across minor version bumps
     "updates": {
       "url": "https://u.expo.dev/1e4b3def-6913-430a-8521-862a69494788"
     }
