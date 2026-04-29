@@ -29,11 +29,11 @@ import { getUserProfile, saveUserProfile, UserProfile } from '@/lib/storage';
 import { useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 import { supabase } from '@/lib/supabase';
 import { syncAll } from '@/lib/sync';
 import { Session } from '@supabase/supabase-js';
 import { useTheme } from '@/lib/theme';
-import { APP_VERSION } from '@/constants/version';
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile>({ name: '', email: '', currency: 'USD' });
@@ -46,6 +46,8 @@ export default function ProfileScreen() {
   const [password, setPassword] = useState('');
   const { colors, isDark, toggleTheme } = useTheme();
   const router = useRouter();
+  const installedVersion = Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
+  const runningVersion = Updates.manifest?.version ?? Constants.expoConfig?.version ?? installedVersion;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -122,7 +124,8 @@ export default function ProfileScreen() {
     try {
       const update = await Updates.checkForUpdateAsync();
       if (update.isAvailable) {
-        Alert.alert('Update available', `Version ${APP_VERSION} is ready. Install now?`, [
+        const availableVersion = update.manifest?.version ?? 'a newer version';
+        Alert.alert('Update available', `Version ${availableVersion} is ready. Install now?`, [
           { text: 'Later', style: 'cancel', onPress: () => setUpdating(false) },
           {
             text: 'Install',
@@ -133,16 +136,14 @@ export default function ProfileScreen() {
           },
         ]);
       } else {
-        // Double check if there's a runtime version mismatch
-        const currentVersion = Constants.expoConfig?.version;
-        if (currentVersion && currentVersion !== APP_VERSION) {
+        if (runningVersion !== installedVersion) {
           Alert.alert(
-            'New version available',
-            `A newer version (v${APP_VERSION}) exists, but it requires a store update. Please download the latest build.`,
-            [{ text: 'OK', onPress: () => setUpdating(false) }]
+            'Up to date',
+            `No newer OTA updates found. Installed build is v${installedVersion}, currently running update is v${runningVersion}.`
           );
+          setUpdating(false);
         } else {
-          Alert.alert('Up to date', 'You are on the latest version.');
+          Alert.alert('Up to date', `You are on the latest update for installed build v${installedVersion}.`);
           setUpdating(false);
         }
       }
@@ -329,7 +330,7 @@ export default function ProfileScreen() {
                   <View style={[styles.versionBadge, { backgroundColor: colors.border }]}>
                     <View style={styles.greenDot} />
                     <Text style={[styles.versionText, { color: colors.subtext }]}>
-                      v{APP_VERSION}
+                      v{installedVersion}
                     </Text>
                   </View>
                   <ChevronRight size={16} color={colors.placeholder} />
