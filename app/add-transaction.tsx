@@ -64,18 +64,20 @@ export default function AddTransactionScreen() {
     getCategories().then(setCategories);
   }, []);
 
-  // Update suggestions when note changes
+  // Update suggestions when note changes (supports multi-word filtering)
   useEffect(() => {
-    if (!note) {
+    const query = note.trim().toLowerCase();
+    if (!query) {
       setFilteredNotes([]);
       setShowSuggestions(false);
       return;
     }
 
-    const filtered = allRecentNotes.filter(s => 
-      s.note.toLowerCase().includes(note.toLowerCase()) && 
-      s.note.toLowerCase() !== note.toLowerCase()
-    );
+    const tokens = query.split(/\s+/).filter(Boolean);
+    const filtered = allRecentNotes.filter((s) => {
+      const candidate = s.note.toLowerCase();
+      return candidate !== query && tokens.every((token) => candidate.includes(token));
+    });
     setFilteredNotes(filtered.slice(0, 5));
     setShowSuggestions(filtered.length > 0);
   }, [note, allRecentNotes]);
@@ -257,34 +259,29 @@ export default function AddTransactionScreen() {
               value={note}
               onChangeText={setNote}
               onFocus={() => setShowSuggestions(filteredNotes.length > 0)}
+              onBlur={() => setShowSuggestions(false)}
               returnKeyType="next"
               onSubmitEditing={() => amountRef.current?.focus()}
             />
             {showSuggestions && (
               <View style={styles.suggestionsContainer}>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  keyboardShouldPersistTaps="always"
-                >
+                <Text style={[styles.suggestionTitle, { color: colors.muted }]}>Suggested notes</Text>
+                <View style={styles.suggestionBadgeWrap}>
                   {filteredNotes.map((suggestion, idx) => (
                     <TouchableOpacity
                       key={idx}
                       style={[styles.suggestionChip, { backgroundColor: colors.card2, borderColor: colors.border }]}
                       onPress={() => {
                         setNote(suggestion.note);
-                        setAmount(suggestion.amount.toString());
                         setShowSuggestions(false);
-                        // Focus amount briefly then you can just save
-                        amountRef.current?.focus();
                       }}
                     >
                       <Text style={[styles.suggestionText, { color: colors.subtext }]}>
-                        {suggestion.note} • {suggestion.amount}
+                        {suggestion.note}
                       </Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
+                </View>
               </View>
             )}
           </View>
@@ -463,17 +460,27 @@ const styles = StyleSheet.create({
   // Suggestions
   suggestionsContainer: {
     marginTop: 8,
+    gap: 8,
+  },
+  suggestionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  suggestionBadgeWrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   suggestionChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginRight: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
     borderWidth: 1,
   },
   suggestionText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
   },
   // Amount
