@@ -9,7 +9,7 @@ import {
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import "../global.css";
 
@@ -17,35 +17,11 @@ function RootLayoutContent() {
   const router = useRouter();
   const segments = useSegments();
   const [isReady, setIsReady] = useState(false);
+  const hasCheckedUpdate = useRef(false);
   const { colors, isDark } = useTheme();
 
   useEffect(() => {
     async function setup() {
-      if (!__DEV__) {
-        try {
-          const update = await Updates.checkForUpdateAsync();
-          if (update.isAvailable) {
-            await Updates.fetchUpdateAsync();
-            Alert.alert(
-              "New app version available",
-              "A new version is available. Restart now to update?",
-              [
-                { text: "Later", style: "cancel" },
-                {
-                  text: "Restart now",
-                  onPress: () => {
-                    void Updates.reloadAsync();
-                  },
-                },
-              ],
-              { cancelable: true },
-            );
-          }
-        } catch {
-          // Ignore update check errors to avoid blocking startup.
-        }
-      }
-
       const hasPermission = await requestPermissions();
       if (hasPermission) await scheduleDailyReminder();
 
@@ -58,6 +34,39 @@ function RootLayoutContent() {
     }
     setup();
   }, [segments]);
+
+  useEffect(() => {
+    if (!isReady || __DEV__ || hasCheckedUpdate.current) return;
+
+    hasCheckedUpdate.current = true;
+
+    async function checkForAppUpdate() {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (!update.isAvailable) return;
+
+        await Updates.fetchUpdateAsync();
+        Alert.alert(
+          "New app version available",
+          "A new version is available. Restart now to update?",
+          [
+            { text: "Later", style: "cancel" },
+            {
+              text: "Restart now",
+              onPress: () => {
+                void Updates.reloadAsync();
+              },
+            },
+          ],
+          { cancelable: true },
+        );
+      } catch {
+        // Ignore update check errors to avoid blocking startup.
+      }
+    }
+
+    checkForAppUpdate();
+  }, [isReady]);
 
   if (!isReady) return null;
 
