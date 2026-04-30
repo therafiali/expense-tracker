@@ -64,6 +64,7 @@ export const addCategory = async (label: string) => {
 export interface NoteSuggestion {
   note: string;
   amount: number;
+  category?: string;
 }
 
 export const getRecentNotes = async (): Promise<NoteSuggestion[]> => {
@@ -76,15 +77,25 @@ export const getRecentNotes = async (): Promise<NoteSuggestion[]> => {
   }
 };
 
-export const saveRecentNote = async (note: string, amount: number) => {
+export const saveRecentNote = async (note: string, amount: number, category?: string) => {
   if (!note || note.trim().length < 2) return;
   try {
     const trimmedNote = note.trim();
     const suggestions = await getRecentNotes();
     
     // Remove if already exists and add to front (most recent)
-    const filtered = suggestions.filter(s => s.note.toLowerCase() !== trimmedNote.toLowerCase());
-    const updated: NoteSuggestion[] = [{ note: trimmedNote, amount }, ...filtered].slice(0, 50);
+    const normalizedCategory = category?.trim();
+    const filtered = suggestions.filter(
+      (s) =>
+        !(
+          s.note.toLowerCase() === trimmedNote.toLowerCase() &&
+          (s.category || '') === (normalizedCategory || '')
+        )
+    );
+    const updated: NoteSuggestion[] = [
+      { note: trimmedNote, amount, category: normalizedCategory },
+      ...filtered,
+    ].slice(0, 50);
     
     await AsyncStorage.setItem('recent_notes_v2', JSON.stringify(updated));
   } catch (error) {
@@ -107,7 +118,7 @@ export const saveTransaction = async (date: Date, transaction: Transaction) => {
   
   // Save note to suggestions
   if (transaction.note) {
-    saveRecentNote(transaction.note, transaction.amount).catch(err => console.error('Failed to save recent note:', err));
+    saveRecentNote(transaction.note, transaction.amount, transaction.category).catch(err => console.error('Failed to save recent note:', err));
   }
   
   // Push to cloud in the background

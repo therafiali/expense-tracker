@@ -49,6 +49,7 @@ export default function AddTransactionScreen() {
   const [allRecentNotes, setAllRecentNotes] = useState<NoteSuggestion[]>([]);
   const [filteredNotes, setFilteredNotes] = useState<NoteSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isNoteFocused, setIsNoteFocused] = useState(false);
   
   const [categories, setCategories] = useState<any[]>([]);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
@@ -64,23 +65,39 @@ export default function AddTransactionScreen() {
     getCategories().then(setCategories);
   }, []);
 
-  // Update suggestions when note changes (supports multi-word filtering)
+  const formatSuggestionAmount = (value: number) => {
+    if (Number.isInteger(value)) return `${value}`;
+    return value.toFixed(2);
+  };
+
+  // Update suggestions when note/category/type changes
   useEffect(() => {
     const query = note.trim().toLowerCase();
-    if (!query) {
-      setFilteredNotes([]);
-      setShowSuggestions(false);
-      return;
+    const scopedByCategory = allRecentNotes.filter((s) => {
+      if (type !== 'expense') return true;
+      if (!selectedCategory) return false;
+      return s.category === selectedCategory;
+    });
+
+    let filtered = scopedByCategory;
+    if (query) {
+      const tokens = query.split(/\s+/).filter(Boolean);
+      filtered = scopedByCategory.filter((s) => {
+        const candidate = s.note.toLowerCase();
+        return candidate !== query && tokens.every((token) => candidate.includes(token));
+      });
     }
 
-    const tokens = query.split(/\s+/).filter(Boolean);
-    const filtered = allRecentNotes.filter((s) => {
-      const candidate = s.note.toLowerCase();
-      return candidate !== query && tokens.every((token) => candidate.includes(token));
-    });
     setFilteredNotes(filtered.slice(0, 5));
-    setShowSuggestions(filtered.length > 0);
-  }, [note, allRecentNotes]);
+  }, [note, allRecentNotes, selectedCategory, type]);
+
+  useEffect(() => {
+    const shouldShowCategoryHistory =
+      type === 'expense' &&
+      !!selectedCategory &&
+      note.trim().length === 0;
+    setShowSuggestions((isNoteFocused || shouldShowCategoryHistory) && filteredNotes.length > 0);
+  }, [filteredNotes, isNoteFocused, note, selectedCategory, type]);
 
 
 
@@ -258,14 +275,16 @@ export default function AddTransactionScreen() {
               placeholderTextColor={colors.placeholder}
               value={note}
               onChangeText={setNote}
-              onFocus={() => setShowSuggestions(filteredNotes.length > 0)}
-              onBlur={() => setShowSuggestions(false)}
+              onFocus={() => setIsNoteFocused(true)}
+              onBlur={() => setIsNoteFocused(false)}
               returnKeyType="next"
               onSubmitEditing={() => amountRef.current?.focus()}
             />
             {showSuggestions && (
               <View style={styles.suggestionsContainer}>
-                <Text style={[styles.suggestionTitle, { color: colors.muted }]}>Suggested notes</Text>
+                <Text style={[styles.suggestionTitle, { color: colors.muted }]}>
+                  {type === 'expense' && selectedCategory ? 'Recent in this category' : 'Suggested notes'}
+                </Text>
                 <View style={styles.suggestionBadgeWrap}>
                   {filteredNotes.map((suggestion, idx) => (
                     <TouchableOpacity
@@ -277,7 +296,7 @@ export default function AddTransactionScreen() {
                       }}
                     >
                       <Text style={[styles.suggestionText, { color: colors.subtext }]}>
-                        {suggestion.note}
+                        {`${suggestion.note}: ${formatSuggestionAmount(suggestion.amount)}`}
                       </Text>
                     </TouchableOpacity>
                   ))}

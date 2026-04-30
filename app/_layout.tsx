@@ -1,6 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Updates from 'expo-updates';
+import { Alert } from 'react-native';
 import { requestPermissions, scheduleDailyReminder } from '@/lib/notifications';
 import { getUserProfile } from '@/lib/storage';
 import { useRouter, useSegments } from 'expo-router';
@@ -28,6 +30,37 @@ function RootLayoutContent() {
     }
     setup();
   }, [segments]);
+
+  useEffect(() => {
+    async function checkForAppUpdate() {
+      if (__DEV__) return;
+
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (!update.isAvailable) return;
+
+        await Updates.fetchUpdateAsync();
+        Alert.alert(
+          'Update available',
+          'A new update is ready. Restart now to apply it.',
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Restart now',
+              onPress: () => {
+                void Updates.reloadAsync();
+              },
+            },
+          ],
+          { cancelable: true }
+        );
+      } catch {
+        // Ignore update check errors to avoid blocking startup.
+      }
+    }
+
+    checkForAppUpdate();
+  }, []);
 
   if (!isReady) return null;
 
