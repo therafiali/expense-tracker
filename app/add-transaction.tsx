@@ -292,7 +292,9 @@ export default function AddTransactionScreen() {
                       style={[styles.suggestionChip, { backgroundColor: colors.card2, borderColor: colors.border }]}
                       onPress={() => {
                         setNote(suggestion.note);
+                        setAmount(String(suggestion.amount));
                         setShowSuggestions(false);
+                        setTimeout(() => amountRef.current?.focus(), 50);
                       }}
                     >
                       <Text style={[styles.suggestionText, { color: colors.subtext }]}>
