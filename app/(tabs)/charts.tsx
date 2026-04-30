@@ -35,6 +35,30 @@ export default function ChartsScreen() {
 
   const { totalIncome, totalExpenses, balance } = getSummaries(data);
   const breakdown = getCategoryBreakdown(data.expenses);
+  const noteBreakdown = React.useMemo(() => {
+    const totals = new Map<string, { amount: number; count: number }>();
+
+    for (const tx of data.expenses) {
+      const cleanNote = tx.note?.trim();
+      if (!cleanNote) continue;
+      const prev = totals.get(cleanNote) ?? { amount: 0, count: 0 };
+      totals.set(cleanNote, { amount: prev.amount + tx.amount, count: prev.count + 1 });
+    }
+
+    const rows = Array.from(totals.entries())
+      .map(([note, stats]) => ({
+        note,
+        amount: stats.amount,
+        count: stats.count,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const totalNotedExpense = rows.reduce((sum, row) => sum + row.amount, 0);
+    return rows.slice(0, 8).map((row) => ({
+      ...row,
+      percentage: totalNotedExpense > 0 ? (row.amount / totalNotedExpense) * 100 : 0,
+    }));
+  }, [data.expenses]);
 
   const nextMonth = () => setCurrentDate(subMonths(currentDate, -1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
@@ -142,6 +166,43 @@ export default function ChartsScreen() {
           </View>
         )}
 
+        {/* Notes Breakdown */}
+        <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 22 }]}>Spending by Notes</Text>
+        {noteBreakdown.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.emptyText, { color: colors.muted }]}>No note-based stats for {format(currentDate, 'MMMM')}.</Text>
+          </View>
+        ) : (
+          <View style={[styles.breakdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {noteBreakdown.map((item) => (
+              <View key={item.note} style={[styles.noteRow, { borderTopColor: colors.border2 }]}>
+                <View style={styles.noteMeta}>
+                  <View style={styles.noteHead}>
+                    <Text style={[styles.noteText, { color: colors.text }]} numberOfLines={1}>
+                      {item.note}
+                    </Text>
+                    <Text style={[styles.noteAmount, { color: colors.text }]}>{item.amount.toFixed(0)}</Text>
+                  </View>
+                  <View style={styles.noteBarRow}>
+                    <View style={[styles.catBarBg, { backgroundColor: colors.border }]}>
+                      <View
+                        style={[
+                          styles.catBarFill,
+                          { width: `${item.percentage}%`, backgroundColor: '#10B981' },
+                        ]}
+                      />
+                    </View>
+                    <Text style={[styles.catPercent, { color: colors.muted }]}>{item.percentage.toFixed(0)}%</Text>
+                  </View>
+                  <Text style={[styles.catCount, { color: colors.placeholder }]}>
+                    {item.count} transaction{item.count !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         <View style={{ height: 80 }} />
       </ScrollView>
     </SafeAreaView>
@@ -230,4 +291,19 @@ const styles = StyleSheet.create({
   catBarFill: { height: 4, borderRadius: 2 },
   catPercent: { fontSize: 11, minWidth: 30, textAlign: 'right' },
   catCount: { fontSize: 11 },
+  noteRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+  },
+  noteMeta: { gap: 5 },
+  noteHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  noteText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  noteAmount: { fontSize: 14, fontWeight: '700' },
+  noteBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });
