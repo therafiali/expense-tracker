@@ -24,8 +24,9 @@ import {
   Moon,
   Sun,
   Save,
+  Trash2,
 } from 'lucide-react-native';
-import { getUserProfile, saveUserProfile, UserProfile } from '@/lib/storage';
+import { clearLocalAppStorage, getUserProfile, saveUserProfile, UserProfile } from '@/lib/storage';
 import { useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
@@ -152,6 +153,25 @@ export default function ProfileScreen() {
       Alert.alert('Error', 'Failed to check for updates. Make sure you have a stable connection.');
       setUpdating(false);
     }
+  };
+
+  const handleClearLocalData = () => {
+    Alert.alert(
+      'Clear local data',
+      'Removes transactions, custom categories, notes, and profile on this device. Cloud data is unchanged. Theme and sign-in stay.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearLocalAppStorage();
+            setProfile({ name: '', email: '', currency: 'USD' });
+            Alert.alert('Done', 'Local storage cleared.');
+          },
+        },
+      ],
+    );
   };
 
   if (loading) return null;
@@ -337,6 +357,12 @@ export default function ProfileScreen() {
                 </>
               )}
             </View>
+          </TouchableOpacity>
+          <View style={[styles.rowDivider, { backgroundColor: colors.rowDivider }]} />
+          <TouchableOpacity style={styles.row} onPress={handleClearLocalData} activeOpacity={0.7}>
+            <Trash2 size={18} color="#EF4444" />
+            <Text style={[styles.rowText, { color: colors.text }]}>Clear local data</Text>
+            <ChevronRight size={16} color={colors.placeholder} style={styles.rowRight} />
           </TouchableOpacity>
         </View>
 

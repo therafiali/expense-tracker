@@ -1,23 +1,74 @@
 import { supabase } from './supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMonthKey, MonthData, Transaction, UserProfile } from './types';
-import { format, parseISO } from 'date-fns';
+import { parseISO } from 'date-fns';
 
 /**
- * The sync service handles moving data between AsyncStorage and Supabase.
- * It uses a "Last Write Wins" strategy and ensures that local storage
- * is always the immediate source of truth for the UI.
+ * Sync between AsyncStorage and Supabase.
+ *
+ * - Local writes stay authoritative until successfully upserted.
+ * - pushTransaction / syncLocalToCloud use upsert on `id` (safe retries, edits).
+ * - syncCloudToLocal merges server rows into each month: same id → server wins.
+ *   Rows deleted only on the server are not removed locally (no tombstones).
  */
 
+const UPSERT_CHUNK_SIZE = 80;
+
+/** Merge cloud month into local: keyed txs use cloud copy when present; id-less local txs kept. */
+function mergeMonthData(local: MonthData, cloud: MonthData): MonthData {
+  const map = new Map<string, Transaction>();
+  const noId: Transaction[] = [];
+
+  for (const t of [...local.income, ...local.expenses]) {
+    if (t.id) map.set(t.id, t);
+    else noId.push(t);
+  }
+
+  for (const t of [...cloud.income, ...cloud.expenses]) {
+    if (t.id) map.set(t.id, { ...t });
+  }
+
+  const income = [...noId.filter((t) => t.type === 'income')];
+  const expenses = [...noId.filter((t) => t.type === 'expense')];
+
+  for (const t of map.values()) {
+    if (t.type === 'income') income.push(t);
+    else expenses.push(t);
+  }
+
+  const byDateDesc = (a: Transaction, b: Transaction) =>
+    new Date(b.date).getTime() - new Date(a.date).getTime();
+  income.sort(byDateDesc);
+  expenses.sort(byDateDesc);
+
+  return { income, expenses };
+}
+
+function rowFromTransaction(userId: string, t: Transaction & { id: string }) {
+  return {
+    id: t.id,
+    user_id: userId,
+    amount: t.amount,
+    type: t.type,
+    category: t.category,
+    note: t.note,
+    date: t.date,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Push all local month files to Supabase (upsert by transaction id).
+ */
 export const syncLocalToCloud = async () => {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) return;
 
   const userId = session.user.id;
-  
-  // 1. Get all local data keys
   const allKeys = await AsyncStorage.getAllKeys();
-  const dataKeys = allKeys.filter(key => key.startsWith('data_'));
+  const dataKeys = allKeys.filter((key) => key.startsWith('data_'));
 
   for (const key of dataKeys) {
     const localData = await AsyncStorage.getItem(key);
@@ -25,34 +76,30 @@ export const syncLocalToCloud = async () => {
 
     const parsed: MonthData = JSON.parse(localData);
     const allTransactions = [...parsed.income, ...parsed.expenses];
+    const rows = allTransactions
+      .filter((t): t is Transaction & { id: string } => Boolean(t.id))
+      .map((t) => rowFromTransaction(userId, t));
 
-    // 2. Upsert each transaction to Supabase
-    // We use upsert so that existing records are updated if they changed
-    if (allTransactions.length > 0) {
-      const { error } = await supabase
-        .from('transactions')
-        .insert(
-          allTransactions.map(t => ({
-            user_id: userId,
-            amount: t.amount,
-            type: t.type,
-            category: t.category,
-            note: t.note,
-            date: t.date,
-            updated_at: new Date().toISOString(),
-          }))
-        );
-      
+    for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+
+      const { error } = await supabase.from('transactions').upsert(chunk, { onConflict: 'id' });
+
       if (error) console.error('Error syncing to cloud:', error);
     }
   }
 };
 
+/**
+ * Fetch remote transactions and merge into local month buckets (does not delete unknown keys).
+ */
 export const syncCloudToLocal = async () => {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) return;
 
-  // 1. Fetch all transactions from Supabase
   const { data: transactions, error } = await supabase
     .from('transactions')
     .select('*')
@@ -63,86 +110,88 @@ export const syncCloudToLocal = async () => {
     return;
   }
 
-  // 2. Rebuild the monthly local storage
-  const months: Record<string, MonthData> = {};
+  const cloudMonths: Record<string, MonthData> = {};
 
-  transactions.forEach((t: any) => {
-    const date = parseISO(t.date);
+  transactions.forEach((t: Record<string, unknown>) => {
+    const date = parseISO(String(t.date));
     const key = getMonthKey(date);
-    
-    if (!months[key]) {
-      months[key] = { income: [], expenses: [] };
+
+    if (!cloudMonths[key]) {
+      cloudMonths[key] = { income: [], expenses: [] };
     }
 
     const transaction: Transaction = {
-      id: t.id,
-      amount: t.amount,
-      date: t.date,
-      note: t.note,
-      category: t.category,
-      type: t.type,
+      id: String(t.id),
+      amount: typeof t.amount === 'number' ? t.amount : Number(t.amount),
+      date: String(t.date),
+      note: t.note != null ? String(t.note) : undefined,
+      category: t.category != null ? String(t.category) : undefined,
+      type: t.type as Transaction['type'],
     };
 
-    if (t.type === 'income') {
-      months[key].income.push(transaction);
+    if (transaction.type === 'income') {
+      cloudMonths[key].income.push(transaction);
     } else {
-      months[key].expenses.push(transaction);
+      cloudMonths[key].expenses.push(transaction);
     }
   });
 
-  // 3. Save all rebuilt months to AsyncStorage
-  for (const [key, data] of Object.entries(months)) {
-    await AsyncStorage.setItem(key, JSON.stringify(data));
+  for (const [key, cloudData] of Object.entries(cloudMonths)) {
+    const raw = await AsyncStorage.getItem(key);
+    const local: MonthData = raw ? JSON.parse(raw) : { income: [], expenses: [] };
+    const merged = mergeMonthData(local, cloudData);
+    await AsyncStorage.setItem(key, JSON.stringify(merged));
   }
 };
 
-/**
- * Hook to be called whenever a transaction is saved locally
- */
+/** Single-transaction upsert (insert or replace by id). */
 export const pushTransaction = async (transaction: Transaction) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session || !transaction.id) return;
 
-  const { error } = await supabase
-    .from('transactions')
-    .insert({
-      user_id: session.user.id,
-      amount: transaction.amount,
-      type: transaction.type,
-      category: transaction.category,
-      note: transaction.note,
-      date: transaction.date,
-      updated_at: new Date().toISOString(),
-    });
+  const row = rowFromTransaction(session.user.id, transaction as Transaction & { id: string });
+
+  const { error } = await supabase.from('transactions').upsert(row, { onConflict: 'id' });
 
   if (error) console.error('Error pushing transaction:', error);
 };
 
-/**
- * Sync the user profile to Supabase
- */
-export const syncProfile = async (profile: UserProfile) => {
-  const { data: { session } } = await supabase.auth.getSession();
+/** Edits use the same upsert path so a missed insert still creates the row. */
+export const patchTransaction = pushTransaction;
+
+export const deleteTransactionRemote = async (id: string) => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) return;
 
-  const { error } = await supabase
-    .from('profiles')
-    .upsert({
-      id: session.user.id,
-      full_name: profile.name,
-      currency: profile.currency,
-      updated_at: new Date().toISOString(),
-    });
+  const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', session.user.id);
+
+  if (error) console.error('Error deleting transaction:', error);
+};
+
+export const syncProfile = async (profile: UserProfile) => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const { error } = await supabase.from('profiles').upsert({
+    id: session.user.id,
+    full_name: profile.name,
+    currency: profile.currency,
+    updated_at: new Date().toISOString(),
+  });
 
   if (error) console.error('Error syncing profile:', error);
 };
 
 /**
- * Perform a full bi-directional sync
+ * Push local changes, then pull remote and merge into AsyncStorage.
  */
 export const syncAll = async () => {
-  console.log('Starting full sync...');
   await syncLocalToCloud();
   await syncCloudToLocal();
-  console.log('Full sync complete.');
 };

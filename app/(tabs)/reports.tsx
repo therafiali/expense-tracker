@@ -9,8 +9,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, subMonths } from 'date-fns';
+import { format, subMonths, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Download, ArrowUpRight, ArrowDownLeft } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useIsFocused } from '@react-navigation/native';
@@ -22,11 +23,12 @@ import {
   type MonthData,
   type Transaction,
 } from '@/lib/storage';
-import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/components/category-icon';
+import { iconForCategory, colorForCategory } from '@/components/category-icon';
 
 import { useTheme } from '@/lib/theme';
 
 export default function ReportsScreen() {
+  const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
   const [loading, setLoading] = useState(false);
@@ -174,18 +176,26 @@ export default function ReportsScreen() {
               const Icon = isIncome
                 ? ArrowUpRight
                 : t.category
-                ? CATEGORY_ICONS[t.category]
+                ? iconForCategory(t.category)
                 : ArrowDownLeft;
               const color = isIncome
                 ? '#10B981'
                 : t.category
-                ? CATEGORY_COLORS[t.category]
+                ? colorForCategory(t.category)
                 : '#EF4444';
 
               return (
-                <View
+                <TouchableOpacity
                   key={t.id || `${t.date}-${i}`}
                   style={[styles.txRow, { borderBottomColor: colors.border2 }, i < allTx.length - 1 && styles.txRowBorder]}
+                  onPress={() => {
+                    if (!t.id) return;
+                    router.push({
+                      pathname: '/add-transaction',
+                      params: { m: format(parseISO(t.date), 'yyyy_MM'), id: t.id },
+                    });
+                  }}
+                  activeOpacity={0.7}
                 >
                   <View style={[styles.txIcon, { backgroundColor: color + '18' }]}>
                     <Icon size={18} color={color} />
@@ -202,7 +212,7 @@ export default function ReportsScreen() {
                     </Text>
                     <Text style={[styles.txDate, { color: colors.placeholder }]}>{format(new Date(t.date), 'MMM d')}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>

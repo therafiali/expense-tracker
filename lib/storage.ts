@@ -1,15 +1,59 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { pushTransaction, syncProfile } from './sync';
+import { parseISO } from 'date-fns';
+import { pushTransaction, patchTransaction, deleteTransactionRemote, syncProfile } from './sync';
 import { Category, Transaction, UserProfile, MonthData, getMonthKey, CURRENCY_SYMBOLS } from './types';
 
 export { Category, Transaction, UserProfile, MonthData, getMonthKey };
+
+export function generateTransactionId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function transactionsMatch(a: Transaction, b: Transaction): boolean {
+  if (a.id && b.id) return a.id === b.id;
+  return (
+    a.date === b.date &&
+    a.amount === b.amount &&
+    a.type === b.type &&
+    (a.note || '') === (b.note || '') &&
+    (a.category || '') === (b.category || '')
+  );
+}
+
+function removeTransaction(data: MonthData, tx: Transaction): MonthData {
+  return {
+    income: data.income.filter((t) => !transactionsMatch(t, tx)),
+    expenses: data.expenses.filter((t) => !transactionsMatch(t, tx)),
+  };
+}
 
 export const getMonthData = async (date: Date): Promise<MonthData> => {
   try {
     const key = getMonthKey(date);
     const data = await AsyncStorage.getItem(key);
     if (data) {
-      return JSON.parse(data);
+      const parsed: MonthData = JSON.parse(data);
+      let changed = false;
+      const ensureIds = (arr: Transaction[]) =>
+        arr.map((t) => {
+          if (!t.id) {
+            changed = true;
+            return { ...t, id: generateTransactionId() };
+          }
+          return t;
+        });
+      const fixed: MonthData = {
+        income: ensureIds(parsed.income),
+        expenses: ensureIds(parsed.expenses),
+      };
+      if (changed) {
+        await AsyncStorage.setItem(key, JSON.stringify(fixed));
+      }
+      return fixed;
     }
   } catch (error) {
     console.error('Error fetching data:', error);
@@ -106,23 +150,68 @@ export const saveRecentNote = async (note: string, amount: number, category?: st
 export const saveTransaction = async (date: Date, transaction: Transaction) => {
   const key = getMonthKey(date);
   const data = await getMonthData(date);
-  
-  if (transaction.type === 'income') {
-    data.income.unshift(transaction); 
+  const tx: Transaction = {
+    ...transaction,
+    id: transaction.id ?? generateTransactionId(),
+  };
+
+  if (tx.type === 'income') {
+    data.income.unshift(tx);
   } else {
-    data.expenses.unshift(transaction);
+    data.expenses.unshift(tx);
   }
-  
-  // Save locally first for instant UI feedback
+
   await AsyncStorage.setItem(key, JSON.stringify(data));
-  
-  // Save note to suggestions
-  if (transaction.note) {
-    saveRecentNote(transaction.note, transaction.amount, transaction.category).catch(err => console.error('Failed to save recent note:', err));
+
+  if (tx.note) {
+    saveRecentNote(tx.note, tx.amount, tx.category).catch(err => console.error('Failed to save recent note:', err));
   }
-  
-  // Push to cloud in the background
-  pushTransaction(transaction).catch(err => console.error('Background sync failed:', err));
+
+  pushTransaction(tx).catch(err => console.error('Background sync failed:', err));
+};
+
+export const updateTransaction = async (previous: Transaction, next: Transaction) => {
+  const oldMonth = parseISO(previous.date);
+  const newMonth = parseISO(next.date);
+  const oldKey = getMonthKey(oldMonth);
+  const newKey = getMonthKey(newMonth);
+
+  const withoutPrev = removeTransaction(await getMonthData(oldMonth), previous);
+  await AsyncStorage.setItem(oldKey, JSON.stringify(withoutPrev));
+
+  if (oldKey === newKey) {
+    const merged =
+      next.type === 'income'
+        ? { ...withoutPrev, income: [next, ...withoutPrev.income] }
+        : { ...withoutPrev, expenses: [next, ...withoutPrev.expenses] };
+    await AsyncStorage.setItem(oldKey, JSON.stringify(merged));
+  } else {
+    const target = await getMonthData(newMonth);
+    const merged =
+      next.type === 'income'
+        ? { ...target, income: [next, ...target.income] }
+        : { ...target, expenses: [next, ...target.expenses] };
+    await AsyncStorage.setItem(newKey, JSON.stringify(merged));
+  }
+
+  if (next.note) {
+    saveRecentNote(next.note, next.amount, next.category).catch(err =>
+      console.error('Failed to save recent note:', err),
+    );
+  }
+
+  patchTransaction(next).catch(err => console.error('Background sync failed:', err));
+};
+
+export const deleteTransaction = async (tx: Transaction) => {
+  const month = parseISO(tx.date);
+  const key = getMonthKey(month);
+  const data = removeTransaction(await getMonthData(month), tx);
+  await AsyncStorage.setItem(key, JSON.stringify(data));
+
+  if (tx.id) {
+    deleteTransactionRemote(tx.id).catch(err => console.error('Background delete failed:', err));
+  }
 };
 
 export const getSummaries = (data: MonthData) => {
@@ -184,3 +273,21 @@ export const getCurrencySymbol = async (): Promise<string> => {
   const code = await getCurrency();
   return CURRENCY_SYMBOLS[code] || '$';
 };
+
+const FIXED_APP_KEYS = ['custom_categories', 'recent_notes_v2', 'user_profile'] as const;
+
+/** Removes month buckets, custom categories, recent notes, and cached profile. Keeps theme and Supabase session. */
+export async function clearLocalAppStorage(): Promise<void> {
+  const keys = await AsyncStorage.getAllKeys();
+  const toRemove = keys.filter(
+    (k) => k.startsWith('data_') || (FIXED_APP_KEYS as readonly string[]).includes(k),
+  );
+  if (toRemove.length > 0) {
+    await AsyncStorage.multiRemove(toRemove);
+  }
+}
+
+/** Removes everything in AsyncStorage, including auth session and theme. */
+export async function clearAllAsyncStorage(): Promise<void> {
+  await AsyncStorage.clear();
+}

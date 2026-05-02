@@ -8,11 +8,56 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { X, Fuel, Utensils, Wrench, ShoppingBag, BookOpen, GraduationCap, CircleEllipsis, Wallet, Plus, Tag } from 'lucide-react-native';
-import { saveTransaction, getRecentNotes, getCategories, addCategory, type Category, type NoteSuggestion } from '@/lib/storage';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import {
+  format,
+  parse,
+  parseISO,
+  setHours,
+  setMinutes,
+  setSeconds,
+  setMilliseconds,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  eachDayOfInterval,
+  isSameMonth,
+  isSameDay,
+  addMonths,
+} from 'date-fns';
+import {
+  X,
+  Fuel,
+  Utensils,
+  Wrench,
+  ShoppingBag,
+  BookOpen,
+  GraduationCap,
+  CircleEllipsis,
+  Wallet,
+  Plus,
+  Tag,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react-native';
+import {
+  saveTransaction,
+  updateTransaction,
+  deleteTransaction,
+  getRecentNotes,
+  getCategories,
+  getMonthData,
+  addCategory,
+  type Category,
+  type NoteSuggestion,
+  type Transaction,
+} from '@/lib/storage';
+import { useTheme } from '@/lib/theme';
 
 const ICON_MAP: Record<string, any> = {
   Fuel,
@@ -27,24 +72,32 @@ const ICON_MAP: Record<string, any> = {
 
 type TxType = 'expense' | 'income';
 
-interface CategoryDef {
-  id: Category;
-  label: string;
-  icon: any;
-  color: string;
-  bg: string;
+function applyTimeFrom(isoSource: string, calendarDate: Date): Date {
+  const src = parseISO(isoSource);
+  let result = new Date(calendarDate);
+  result = setHours(result, src.getHours());
+  result = setMinutes(result, src.getMinutes());
+  result = setSeconds(result, src.getSeconds());
+  result = setMilliseconds(result, src.getMilliseconds());
+  return result;
 }
-
-// EXPENSE_CATEGORIES is now fetched from storage
-
-import { useTheme } from '@/lib/theme';
 
 export default function AddTransactionScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ m?: string | string[]; id?: string | string[] }>();
+  const monthParam = typeof params.m === 'string' ? params.m : Array.isArray(params.m) ? params.m[0] : undefined;
+  const idParam = typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : undefined;
+  const isEditMode = !!(monthParam && idParam);
+
   const [type, setType] = useState<TxType>('expense');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
+  const [txDate, setTxDate] = useState(() => new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
+  const [originalTx, setOriginalTx] = useState<Transaction | null>(null);
+  const [editLoadFailed, setEditLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [allRecentNotes, setAllRecentNotes] = useState<NoteSuggestion[]>([]);
   const [filteredNotes, setFilteredNotes] = useState<NoteSuggestion[]>([]);
@@ -57,13 +110,36 @@ export default function AddTransactionScreen() {
 
   const noteRef = useRef<TextInput>(null);
   const amountRef = useRef<TextInput>(null);
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
 
-  // Load recent notes and categories on mount
   useEffect(() => {
     getRecentNotes().then(setAllRecentNotes);
     getCategories().then(setCategories);
   }, []);
+
+  useEffect(() => {
+    if (!isEditMode || !monthParam || !idParam) return;
+    let cancelled = false;
+    (async () => {
+      const monthDate = parse(monthParam, 'yyyy_MM', new Date());
+      const monthData = await getMonthData(monthDate);
+      const found = [...monthData.income, ...monthData.expenses].find((t) => t.id === idParam);
+      if (cancelled) return;
+      if (!found) {
+        setEditLoadFailed(true);
+        return;
+      }
+      setOriginalTx(found);
+      setType(found.type);
+      setSelectedCategory(found.category ?? null);
+      setNote(found.note ?? '');
+      setAmount(String(found.amount));
+      setTxDate(parseISO(found.date));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditMode, monthParam, idParam]);
 
   const formatSuggestionAmount = (value: number) => {
     if (Number.isInteger(value)) return `${value}`;
@@ -130,23 +206,81 @@ export default function AddTransactionScreen() {
 
   const handleSave = async () => {
     if (saving) return;
+    if (isEditMode && !originalTx) return;
     const parsed = parseFloat(amount);
     if (!parsed || isNaN(parsed)) return;
     if (type === 'expense' && !selectedCategory) return;
 
     setSaving(true);
-    const now = new Date();
-    await saveTransaction(now, {
-      amount: parsed,
-      date: now.toISOString(),
-      note: note.trim() || undefined,
-      category: type === 'expense' ? selectedCategory! : undefined,
-      type,
-    });
-    router.replace('/(tabs)'); // Navigate to Home page as requested
+    try {
+      const isoDate =
+        isEditMode && originalTx
+          ? applyTimeFrom(originalTx.date, txDate).toISOString()
+          : applyTimeFrom(new Date().toISOString(), txDate).toISOString();
+
+      if (isEditMode && originalTx) {
+        await updateTransaction(originalTx, {
+          ...originalTx,
+          amount: parsed,
+          date: isoDate,
+          note: note.trim() || undefined,
+          category: type === 'expense' ? selectedCategory! : undefined,
+          type,
+        });
+      } else {
+        await saveTransaction(parseISO(isoDate), {
+          amount: parsed,
+          date: isoDate,
+          note: note.trim() || undefined,
+          category: type === 'expense' ? selectedCategory! : undefined,
+          type,
+        });
+      }
+      router.replace('/(tabs)');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const canSave = amount && parseFloat(amount) > 0 && (type === 'income' || selectedCategory);
+  const handleDelete = () => {
+    if (!originalTx) return;
+    Alert.alert('Delete transaction', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteTransaction(originalTx);
+          router.replace('/(tabs)');
+        },
+      },
+    ]);
+  };
+
+  const canSave =
+    amount &&
+    parseFloat(amount) > 0 &&
+    (type === 'income' || selectedCategory) &&
+    (!isEditMode || originalTx);
+
+  if (isEditMode && editLoadFailed) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={[styles.closeBtn, { backgroundColor: colors.card2 }]}>
+            <X size={20} color={colors.subtext} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Transaction</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View style={{ padding: 24 }}>
+          <Text style={{ color: colors.muted, fontSize: 15 }}>
+            This transaction could not be found. It may have been deleted or moved.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -159,7 +293,9 @@ export default function AddTransactionScreen() {
           <TouchableOpacity onPress={() => router.back()} style={[styles.closeBtn, { backgroundColor: colors.card2 }]}>
             <X size={20} color={colors.subtext} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Add Transaction</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            {isEditMode ? 'Edit Transaction' : 'Add Transaction'}
+          </Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -325,6 +461,106 @@ export default function AddTransactionScreen() {
             </View>
           </View>
 
+          {/* Date */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionLabel, { color: colors.muted }]}>Date</Text>
+            <TouchableOpacity
+              style={[styles.noteInput, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => {
+                setCalendarMonth(startOfMonth(txDate));
+                setShowDatePicker(true);
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={{ color: colors.text, fontSize: 15 }}>{format(txDate, 'EEEE, MMM d, yyyy')}</Text>
+            </TouchableOpacity>
+            <Modal visible={showDatePicker} transparent animationType="fade">
+              <View style={styles.dateModalOverlay}>
+                <TouchableOpacity
+                  style={StyleSheet.absoluteFillObject}
+                  activeOpacity={1}
+                  onPress={() => setShowDatePicker(false)}
+                />
+                <View style={[styles.dateModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={styles.dateModalHeader}>
+                      <TouchableOpacity
+                        onPress={() => setCalendarMonth((m) => addMonths(m, -1))}
+                        style={[styles.dateModalChevron, { backgroundColor: colors.card2 }]}
+                      >
+                        <ChevronLeft size={20} color={colors.subtext} />
+                      </TouchableOpacity>
+                      <Text style={[styles.dateModalTitle, { color: colors.text }]}>
+                        {format(calendarMonth, 'MMMM yyyy')}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setCalendarMonth((m) => addMonths(m, 1))}
+                        style={[styles.dateModalChevron, { backgroundColor: colors.card2 }]}
+                      >
+                        <ChevronRight size={20} color={colors.subtext} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.weekdayRow}>
+                      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
+                        <Text key={idx} style={[styles.weekdayCell, { color: colors.placeholder }]}>
+                          {d}
+                        </Text>
+                      ))}
+                    </View>
+                    {(() => {
+                      const start = startOfWeek(startOfMonth(calendarMonth), { weekStartsOn: 0 });
+                      const end = endOfWeek(endOfMonth(calendarMonth), { weekStartsOn: 0 });
+                      const days = eachDayOfInterval({ start, end });
+                      const rows: Date[][] = [];
+                      for (let i = 0; i < days.length; i += 7) {
+                        rows.push(days.slice(i, i + 7));
+                      }
+                      const timeSource =
+                        isEditMode && originalTx ? originalTx.date : new Date().toISOString();
+                      return rows.map((week, wi) => (
+                        <View key={wi} style={styles.calendarWeek}>
+                          {week.map((day, di) => {
+                            const inMonth = isSameMonth(day, calendarMonth);
+                            const selected = isSameDay(day, txDate);
+                            return (
+                              <TouchableOpacity
+                                key={di}
+                                style={[
+                                  styles.dayCell,
+                                  selected && styles.dayCellSelected,
+                                  selected && { backgroundColor: '#10B98130' },
+                                ]}
+                                onPress={() => {
+                                  setTxDate(applyTimeFrom(timeSource, day));
+                                  setShowDatePicker(false);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.dayCellText,
+                                    { color: colors.text },
+                                    !inMonth && { color: colors.placeholder, opacity: 0.35 },
+                                    selected && { color: '#10B981', fontWeight: '800' },
+                                  ]}
+                                >
+                                  {format(day, 'd')}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      ));
+                    })()}
+                    <TouchableOpacity
+                      style={[styles.dateModalClose, { backgroundColor: colors.card2 }]}
+                      onPress={() => setShowDatePicker(false)}
+                    >
+                      <Text style={[styles.dateModalCloseText, { color: colors.subtext }]}>Cancel</Text>
+                    </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+          </View>
+
           {/* Save button */}
           <TouchableOpacity
             style={[styles.saveBtn, !canSave && [styles.saveBtnDisabled, { backgroundColor: colors.card }]]}
@@ -333,9 +569,21 @@ export default function AddTransactionScreen() {
             activeOpacity={0.85}
           >
             <Text style={[styles.saveBtnText, !canSave && [styles.saveBtnTextDisabled, { color: colors.muted }]]}>
-              {saving ? 'Saving…' : type === 'expense' ? 'Save Expense' : 'Save Income'}
+              {saving
+                ? 'Saving…'
+                : isEditMode
+                  ? 'Save changes'
+                  : type === 'expense'
+                    ? 'Save Expense'
+                    : 'Save Income'}
             </Text>
           </TouchableOpacity>
+
+          {isEditMode && originalTx ? (
+            <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} activeOpacity={0.85}>
+              <Text style={styles.deleteBtnText}>Delete transaction</Text>
+            </TouchableOpacity>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -534,4 +782,85 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   saveBtnTextDisabled: {},
+  dateModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  dateModalCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
+    zIndex: 1,
+  },
+  dateModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  dateModalChevron: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  weekdayRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  weekdayCell: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  calendarWeek: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  dayCell: {
+    flex: 1,
+    aspectRatio: 1,
+    maxHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  dayCellSelected: {
+    borderRadius: 10,
+  },
+  dayCellText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dateModalClose: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  dateModalCloseText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  deleteBtn: {
+    marginTop: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EF444460',
+  },
+  deleteBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
 });

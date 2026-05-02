@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, subMonths } from 'date-fns';
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react-native';
 import { getMonthData, getSummaries, getCategoryBreakdown, type MonthData } from '@/lib/storage';
-import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/components/category-icon';
+import { iconForCategory, colorForCategory } from '@/components/category-icon';
 import { useIsFocused } from '@react-navigation/native';
 
 import { useTheme } from '@/lib/theme';
@@ -125,7 +125,7 @@ export default function ChartsScreen() {
                     styles.barSegment,
                     {
                       flex: item.percentage,
-                      backgroundColor: CATEGORY_COLORS[item.category],
+                      backgroundColor: colorForCategory(item.category),
                     },
                   ]}
                 />
@@ -134,8 +134,8 @@ export default function ChartsScreen() {
 
             {/* Category rows */}
             {breakdown.map((item) => {
-              const Icon = CATEGORY_ICONS[item.category];
-              const color = CATEGORY_COLORS[item.category];
+              const Icon = iconForCategory(item.category);
+              const color = colorForCategory(item.category);
               const count = data.expenses.filter(e => e.category === item.category).length;
               return (
                 <View key={item.category} style={[styles.catRow, { borderTopColor: colors.border2 }]}>
