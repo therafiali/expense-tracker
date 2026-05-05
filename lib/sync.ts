@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
-import { getMonthKey, MonthData, Transaction, UserProfile } from './types';
+import { getMonthKey, Goal, GoalProgressEntry, MonthData, Transaction, UserProfile } from './types';
 import { parseISO } from 'date-fns';
 import { DeviceEventEmitter } from 'react-native';
 
@@ -30,6 +30,8 @@ async function getSessionWithBriefRetry(): Promise<Session | null> {
  */
 
 const UPSERT_CHUNK_SIZE = 80;
+const GOALS_STORAGE_KEY = 'goals_v1';
+const GOAL_PROGRESS_STORAGE_KEY = 'goal_progress_v1';
 
 /** Merge cloud month into local: keyed txs use cloud copy when present; id-less local txs kept. */
 function mergeMonthData(local: MonthData, cloud: MonthData): MonthData {
@@ -74,6 +76,37 @@ function rowFromTransaction(userId: string, t: Transaction & { id: string }) {
   };
 }
 
+function rowFromGoal(userId: string, goal: Goal) {
+  return {
+    id: goal.id,
+    user_id: userId,
+    title: goal.title,
+    emoji: goal.emoji ?? null,
+    target_count: goal.targetCount,
+    completed_count: goal.completedCount,
+    period: goal.period,
+    reminder_enabled: goal.reminderEnabled,
+    reminders_per_period: goal.remindersPerPeriod,
+    reminder_time: goal.reminderTime,
+    reminder_slots: goal.reminderSlots ?? [],
+    period_anchor: goal.periodAnchor,
+    is_active: goal.isActive,
+    created_at: goal.createdAt,
+    updated_at: goal.updatedAt,
+  };
+}
+
+function rowFromGoalProgress(userId: string, progress: GoalProgressEntry) {
+  return {
+    id: progress.id,
+    user_id: userId,
+    goal_id: progress.goalId,
+    date_key: progress.dateKey,
+    count: progress.count,
+    updated_at: progress.updatedAt,
+  };
+}
+
 /**
  * Push all local month files to Supabase (upsert by transaction id).
  */
@@ -105,6 +138,33 @@ export const syncLocalToCloud = async () => {
 
       if (error) console.error('Error syncing to cloud:', error);
     }
+  }
+};
+
+export const syncGoalsLocalToCloud = async () => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const rawGoals = await AsyncStorage.getItem(GOALS_STORAGE_KEY);
+  const goals: Goal[] = rawGoals ? JSON.parse(rawGoals) : [];
+  const goalRows = goals.map((goal) => rowFromGoal(session.user.id, goal));
+  for (let i = 0; i < goalRows.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = goalRows.slice(i, i + UPSERT_CHUNK_SIZE);
+    if (chunk.length === 0) continue;
+    const { error } = await supabase.from('goals').upsert(chunk, { onConflict: 'id' });
+    if (error) console.error('Error syncing goals to cloud:', error);
+  }
+
+  const rawProgress = await AsyncStorage.getItem(GOAL_PROGRESS_STORAGE_KEY);
+  const entries: GoalProgressEntry[] = rawProgress ? JSON.parse(rawProgress) : [];
+  const progressRows = entries.map((entry) => rowFromGoalProgress(session.user.id, entry));
+  for (let i = 0; i < progressRows.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = progressRows.slice(i, i + UPSERT_CHUNK_SIZE);
+    if (chunk.length === 0) continue;
+    const { error } = await supabase.from('goal_progress').upsert(chunk, { onConflict: 'id' });
+    if (error) console.error('Error syncing goal progress to cloud:', error);
   }
 };
 
@@ -163,6 +223,62 @@ export const syncCloudToLocal = async () => {
   emitTransactionsSynced();
 };
 
+export const syncGoalsCloudToLocal = async () => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const { data: goals, error: goalsError } = await supabase
+    .from('goals')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  if (goalsError) {
+    console.error('Error fetching goals from cloud:', goalsError);
+    return;
+  }
+  if (goals) {
+    const mapped: Goal[] = goals.map((row: Record<string, unknown>) => ({
+      id: String(row.id),
+      title: String(row.title ?? ''),
+      emoji: row.emoji != null ? String(row.emoji) : undefined,
+      targetCount: Number(row.target_count ?? 1),
+      completedCount: Number(row.completed_count ?? 0),
+      period: (row.period as Goal['period']) ?? 'daily',
+      reminderEnabled: Boolean(row.reminder_enabled),
+      remindersPerPeriod: Number(row.reminders_per_period ?? 1),
+      reminderTime: String(row.reminder_time ?? '09:00'),
+      reminderSlots: Array.isArray(row.reminder_slots)
+        ? (row.reminder_slots as Goal['reminderSlots'])
+        : [],
+      periodAnchor: String(row.period_anchor ?? new Date().toISOString()),
+      createdAt: String(row.created_at ?? new Date().toISOString()),
+      updatedAt: String(row.updated_at ?? new Date().toISOString()),
+      isActive: Boolean(row.is_active),
+    }));
+    await AsyncStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(mapped));
+  }
+
+  const { data: progressRows, error: progressError } = await supabase
+    .from('goal_progress')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  if (progressError) {
+    console.error('Error fetching goal progress from cloud:', progressError);
+    return;
+  }
+  if (progressRows) {
+    const mappedProgress: GoalProgressEntry[] = progressRows.map((row: Record<string, unknown>) => ({
+      id: String(row.id),
+      goalId: String(row.goal_id),
+      dateKey: String(row.date_key),
+      count: Number(row.count ?? 0),
+      updatedAt: String(row.updated_at ?? new Date().toISOString()),
+    }));
+    await AsyncStorage.setItem(GOAL_PROGRESS_STORAGE_KEY, JSON.stringify(mappedProgress));
+  }
+};
+
 /** Single-transaction upsert (insert or replace by id). */
 export const pushTransaction = async (transaction: Transaction) => {
   if (!transaction.id) return;
@@ -207,10 +323,28 @@ export const syncProfile = async (profile: UserProfile) => {
   if (error) console.error('Error syncing profile:', error);
 };
 
+export const pushGoal = async (goal: Goal) => {
+  const session = await getSessionWithBriefRetry();
+  if (!session) return;
+  const row = rowFromGoal(session.user.id, goal);
+  const { error } = await supabase.from('goals').upsert(row, { onConflict: 'id' });
+  if (error) console.error('Error pushing goal:', error);
+};
+
+export const pushGoalProgress = async (entry: GoalProgressEntry) => {
+  const session = await getSessionWithBriefRetry();
+  if (!session) return;
+  const row = rowFromGoalProgress(session.user.id, entry);
+  const { error } = await supabase.from('goal_progress').upsert(row, { onConflict: 'id' });
+  if (error) console.error('Error pushing goal progress:', error);
+};
+
 /**
  * Push local changes, then pull remote and merge into AsyncStorage.
  */
 export const syncAll = async () => {
   await syncLocalToCloud();
+  await syncGoalsLocalToCloud();
   await syncCloudToLocal();
+  await syncGoalsCloudToLocal();
 };

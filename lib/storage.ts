@@ -274,7 +274,7 @@ export const getCurrencySymbol = async (): Promise<string> => {
   return CURRENCY_SYMBOLS[code] || '$';
 };
 
-const FIXED_APP_KEYS = ['custom_categories', 'recent_notes_v2', 'user_profile'] as const;
+const FIXED_APP_KEYS = ['custom_categories', 'recent_notes_v2', 'user_profile', 'goals_v1', 'goal_progress_v1'] as const;
 
 /** Removes month buckets, custom categories, recent notes, and cached profile. Keeps theme and Supabase session. */
 export async function clearLocalAppStorage(): Promise<void> {

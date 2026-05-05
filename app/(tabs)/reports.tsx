@@ -23,6 +23,7 @@ import {
   type MonthData,
   type Transaction,
 } from '@/lib/storage';
+import { getActiveGoals, getGoalProgress } from '@/lib/goals';
 import { iconForCategory, colorForCategory } from '@/components/category-icon';
 
 import { useTheme } from '@/lib/theme';
@@ -35,6 +36,9 @@ export default function ReportsScreen() {
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [goalRows, setGoalRows] = useState<
+    Array<{ id: string; title: string; emoji?: string; targetCount: number; done: number; percent: number }>
+  >([]);
   const isFocused = useIsFocused();
   const { colors } = useTheme();
 
@@ -44,8 +48,27 @@ export default function ReportsScreen() {
 
   const loadData = async () => {
     setLoading(true);
-    const monthData = await getMonthData(currentDate);
+    const [monthData, goals, progress] = await Promise.all([
+      getMonthData(currentDate),
+      getActiveGoals(),
+      getGoalProgress(),
+    ]);
+    const monthPrefix = format(currentDate, 'yyyy-MM');
+    const progressMap = new Map<string, number>();
+    for (const entry of progress) {
+      if (!entry.dateKey.startsWith(monthPrefix)) continue;
+      progressMap.set(entry.goalId, (progressMap.get(entry.goalId) ?? 0) + entry.count);
+    }
+    const rows = goals
+      .map((goal) => {
+        const done = progressMap.get(goal.id) ?? 0;
+        const target = Math.max(1, goal.targetCount);
+        const percent = Math.min(100, (done / target) * 100);
+        return { id: goal.id, title: goal.title, emoji: goal.emoji, targetCount: target, done, percent };
+      })
+      .sort((a, b) => b.percent - a.percent);
     setData(monthData);
+    setGoalRows(rows);
     setLoading(false);
   };
 
@@ -56,7 +79,7 @@ export default function ReportsScreen() {
     ...data.expenses.map((t) => ({ ...t, type: 'expense' as const })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const handleExport = async () => {
+  const handleExportExpenses = async () => {
     setExporting(true);
     const currencySymbol = await getCurrencySymbol();
     const html = `
@@ -74,7 +97,7 @@ export default function ReportsScreen() {
         .inc { color:#2A6174; font-weight:bold; }
         .exp { color:#EF4444; font-weight:bold; }
       </style></head><body>
-        <h1>WalletWatch Report</h1>
+        <h1>WalletWatch Expense Report</h1>
         <p class="sub">${format(currentDate, 'MMMM yyyy')}</p>
         <div class="summary">
           <div class="card"><h3>Income</h3><p style="color:#2A6174">${currencySymbol}${totalIncome.toFixed(2)}</p></div>
@@ -106,6 +129,55 @@ export default function ReportsScreen() {
     }
   };
 
+  const handleExportGoals = async () => {
+    setExporting(true);
+    const html = `
+      <html><head><style>
+        body { font-family: Helvetica, sans-serif; padding: 40px; color: #111; }
+        h1 { color: #2A6174; margin-bottom: 4px; }
+        .sub { color: #666; margin-bottom: 30px; }
+        table { width:100%; border-collapse:collapse; font-size:13px; }
+        th { text-align:left; padding:10px 8px; border-bottom:2px solid #eee; color:#444; }
+        td { padding:10px 8px; border-bottom:1px solid #f0f0f0; }
+      </style></head><body>
+        <h1>WalletWatch Goal Report</h1>
+        <p class="sub">${format(currentDate, 'MMMM yyyy')}</p>
+        ${
+          goalRows.length === 0
+            ? '<p>No goal data available for this month.</p>'
+            : `
+          <table>
+            <thead><tr><th>Goal</th><th>Done</th><th>Target</th><th>Completion</th></tr></thead>
+            <tbody>
+              ${goalRows
+                .map(
+                  (g) => `
+                <tr>
+                  <td>${(g.emoji ? `${g.emoji} ` : '') + g.title}</td>
+                  <td>${g.done}</td>
+                  <td>${g.targetCount}</td>
+                  <td>${g.percent.toFixed(0)}%</td>
+                </tr>
+              `,
+                )
+                .join('')}
+            </tbody>
+          </table>
+        `
+        }
+      </body></html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Export Goal Report' });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
       <ScrollView
@@ -116,24 +188,44 @@ export default function ReportsScreen() {
         {/* Header */}
         <View style={styles.headerRow}>
           <Text style={[styles.pageTitle, { color: colors.text }]}>Reports</Text>
-          <TouchableOpacity
-            style={[
-              styles.exportBtn,
-              { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
-            ]}
-            onPress={handleExport}
-            disabled={exporting || allTx.length === 0}
-            activeOpacity={0.8}
-          >
-            {exporting ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <Download size={15} color={colors.heading} />
-                <Text style={[styles.exportText, { color: colors.heading }]}>Download PDF</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <View style={styles.exportGroup}>
+            <TouchableOpacity
+              style={[
+                styles.exportBtn,
+                { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+              ]}
+              onPress={handleExportExpenses}
+              disabled={exporting || allTx.length === 0}
+              activeOpacity={0.8}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Download size={15} color={colors.heading} />
+                  <Text style={[styles.exportText, { color: colors.heading }]}>Expense PDF</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.exportBtn,
+                { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+              ]}
+              onPress={handleExportGoals}
+              disabled={exporting}
+              activeOpacity={0.8}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Download size={15} color={colors.heading} />
+                  <Text style={[styles.exportText, { color: colors.heading }]}>Goal PDF</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Month switcher */}
@@ -227,6 +319,43 @@ export default function ReportsScreen() {
           </View>
         )}
 
+        <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 22 }]}>Goal Progress</Text>
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 10 }} />
+        ) : goalRows.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.emptyText, { color: colors.muted }]}>No goals for {format(currentDate, 'MMMM yyyy')}.</Text>
+          </View>
+        ) : (
+          <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {goalRows.map((goal, i) => (
+              <View
+                key={goal.id}
+                style={[
+                  styles.goalRow,
+                  i < goalRows.length - 1 && [styles.txRowBorder, { borderBottomColor: colors.border2 }],
+                ]}
+              >
+                <View style={[styles.goalIcon, { backgroundColor: colors.primaryMuted }]}>
+                  <Text style={{ fontSize: 18 }}>{goal.emoji || '🎯'}</Text>
+                </View>
+                <View style={styles.goalMeta}>
+                  <Text style={[styles.txTitle, { color: colors.text }]} numberOfLines={1}>
+                    {goal.title}
+                  </Text>
+                  <View style={[styles.goalProgressTrack, { backgroundColor: colors.border }]}>
+                    <View style={[styles.goalProgressFill, { width: `${goal.percent}%`, backgroundColor: colors.primary }]} />
+                  </View>
+                </View>
+                <View style={styles.txRight}>
+                  <Text style={[styles.txAmount, { color: colors.text }]}>{goal.done}/{goal.targetCount}</Text>
+                  <Text style={[styles.txDate, { color: colors.placeholder }]}>{goal.percent.toFixed(0)}%</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         <View style={{ height: 80 }} />
       </ScrollView>
     </SafeAreaView>
@@ -252,6 +381,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
+  },
+  exportGroup: {
+    flexDirection: 'row',
+    gap: 8,
   },
   exportText: { fontSize: 13, fontWeight: '600' },
   monthRow: {
@@ -322,4 +455,20 @@ const styles = StyleSheet.create({
   txRight: { alignItems: 'flex-end' },
   txAmount: { fontSize: 14, fontWeight: '700' },
   txDate: { fontSize: 11, marginTop: 2 },
+  goalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  goalIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goalMeta: { flex: 1, gap: 6 },
+  goalProgressTrack: { height: 5, borderRadius: 999, overflow: 'hidden' },
+  goalProgressFill: { height: '100%', borderRadius: 999 },
 });

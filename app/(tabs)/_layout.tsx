@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { Home, BarChart2, Plus, FileText, User, Menu } from 'lucide-react-native';
+import { Home, BarChart2, Plus, FileText, Target } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, usePathname } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +17,7 @@ function CustomTabBar() {
 
   const tabs = [
     { name: 'Home', icon: Home, route: '/(tabs)/' },
+    { name: 'Goals', icon: Target, route: '/(tabs)/goals' },
     { name: 'Charts', icon: BarChart2, route: '/(tabs)/charts' },
     { name: 'Reports', icon: FileText, route: '/(tabs)/reports' },
     // { name: 'Profile', icon: User, route: '/(tabs)/profile' },
@@ -123,6 +124,7 @@ export default function TabLayout() {
         }}
       >
         <Tabs.Screen name="index" />
+        <Tabs.Screen name="goals" />
         <Tabs.Screen name="charts" />
         <Tabs.Screen name="explore" options={{ href: null }} />
         <Tabs.Screen name="reports" />

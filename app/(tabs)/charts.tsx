@@ -25,6 +25,7 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getMonthData, getSummaries, getCategoryBreakdown, type MonthData } from '@/lib/storage';
+import { getActiveGoals, getGoalProgress } from '@/lib/goals';
 import { iconForCategory, colorForCategory } from '@/components/category-icon';
 import { useIsFocused } from '@react-navigation/native';
 
@@ -41,6 +42,9 @@ export default function ChartsScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
+  const [goalRows, setGoalRows] = useState<
+    Array<{ id: string; title: string; emoji?: string; targetCount: number; done: number; percent: number }>
+  >([]);
   const isFocused = useIsFocused();
   const { colors } = useTheme();
 
@@ -51,6 +55,29 @@ export default function ChartsScreen() {
   const loadData = async () => {
     const monthData = await getMonthData(currentDate);
     setData(monthData);
+    const [goals, progress] = await Promise.all([getActiveGoals(), getGoalProgress()]);
+    const monthPrefix = format(currentDate, 'yyyy-MM');
+    const progressMap = new Map<string, number>();
+    for (const entry of progress) {
+      if (!entry.dateKey.startsWith(monthPrefix)) continue;
+      progressMap.set(entry.goalId, (progressMap.get(entry.goalId) ?? 0) + entry.count);
+    }
+    const rows = goals
+      .map((goal) => {
+        const done = progressMap.get(goal.id) ?? 0;
+        const target = Math.max(1, goal.targetCount);
+        const percent = Math.min(100, (done / target) * 100);
+        return {
+          id: goal.id,
+          title: goal.title,
+          emoji: goal.emoji,
+          targetCount: target,
+          done,
+          percent,
+        };
+      })
+      .sort((a, b) => b.percent - a.percent);
+    setGoalRows(rows);
   };
 
   const { totalIncome, totalExpenses, balance } = getSummaries(data);
@@ -352,6 +379,50 @@ export default function ChartsScreen() {
                   </View>
                   <Text style={[styles.catCount, { color: colors.placeholder, fontFamily: Fonts.regular }]}>
                     {item.count} transaction{item.count !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 22, fontFamily: Fonts.bold }]}>
+          Goal Progress
+        </Text>
+        {goalRows.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.emptyText, { color: colors.muted, fontFamily: Fonts.regular }]}>
+              No goals found. Add goals to see monthly progress.
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.breakdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {goalRows.map((goal) => (
+              <View key={goal.id} style={[styles.noteRow, { borderTopColor: colors.border2 }]}>
+                <View style={styles.noteMeta}>
+                  <View style={styles.noteHead}>
+                    <Text style={[styles.noteText, { color: colors.text, fontFamily: Fonts.semibold }]} numberOfLines={1}>
+                      {goal.emoji ? `${goal.emoji} ${goal.title}` : goal.title}
+                    </Text>
+                    <Text style={[styles.noteAmount, { color: colors.text, fontFamily: Fonts.bold }]}>
+                      {goal.done}/{goal.targetCount}
+                    </Text>
+                  </View>
+                  <View style={styles.noteBarRow}>
+                    <View style={[styles.catBarBg, { backgroundColor: colors.border }]}>
+                      <View
+                        style={[
+                          styles.catBarFill,
+                          { width: `${goal.percent}%`, backgroundColor: colors.primary },
+                        ]}
+                      />
+                    </View>
+                    <Text style={[styles.catPercent, { color: colors.muted, fontFamily: Fonts.medium }]}>
+                      {goal.percent.toFixed(0)}%
+                    </Text>
+                  </View>
+                  <Text style={[styles.catCount, { color: colors.placeholder, fontFamily: Fonts.regular }]}>
+                    Completion in {format(currentDate, 'MMMM')}
                   </Text>
                 </View>
               </View>

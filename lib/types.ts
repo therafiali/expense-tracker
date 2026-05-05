@@ -24,6 +24,39 @@ export interface MonthData {
   expenses: Transaction[];
 }
 
+export type GoalPeriod = 'daily' | 'weekly' | 'monthly';
+
+export interface GoalReminderSlot {
+  id: string;
+  label?: string;
+  time: string; // HH:mm
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  emoji?: string;
+  targetCount: number;
+  completedCount: number;
+  period: GoalPeriod;
+  reminderEnabled: boolean;
+  remindersPerPeriod: number;
+  reminderTime: string; // HH:mm
+  reminderSlots?: GoalReminderSlot[];
+  periodAnchor: string; // ISO string used to detect period rollover
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
+}
+
+export interface GoalProgressEntry {
+  id: string;
+  goalId: string;
+  dateKey: string; // yyyy-MM-dd
+  count: number;
+  updatedAt: string;
+}
+
 export const getMonthKey = (date: Date) => `data_${format(date, 'yyyy_MM')}`;
 
 
