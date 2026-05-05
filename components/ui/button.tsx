@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { Text } from './text';
 
 const buttonVariants = cva(
-  'flex-row items-center justify-center rounded-xl px-4 py-3 active:opacity-80',
+  'flex-row items-center justify-center rounded-full px-5 py-3 active:opacity-80',
   {
     variants: {
       variant: {
@@ -16,10 +16,10 @@ const buttonVariants = cva(
         destructive: 'bg-red-500',
       },
       size: {
-        default: 'h-12',
-        sm: 'h-10 px-3',
-        lg: 'h-14 px-8',
-        icon: 'h-12 w-12 p-0',
+        default: 'h-12 min-h-12',
+        sm: 'h-10 min-h-10 px-4',
+        lg: 'h-14 min-h-14 px-10',
+        icon: 'h-12 w-12 min-h-12 min-w-12 rounded-full p-0',
       },
     },
     defaultVariants: {
@@ -49,7 +49,7 @@ const Button = React.forwardRef<View, ButtonProps>(
           <Text
             className={cn(
               'font-semibold text-center',
-              variant === 'outline' ? 'text-accent' : 'text-white',
+              variant === 'outline' ? 'text-heading' : 'text-accent-fg',
               labelClasses
             )}
           >

@@ -1,7 +1,41 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  palette,
+  incomeLight,
+  incomeDark,
+  withAlpha,
+} from '@/constants/designTokens';
 
-export const DARK = {
+export interface ThemeColors {
+  bg: string;
+  card: string;
+  card2: string;
+  card3: string;
+  text: string;
+  subtext: string;
+  muted: string;
+  border: string;
+  border2: string;
+  tabBar: string;
+  tabBorder: string;
+  tabInactive: string;
+  placeholder: string;
+  inputBg: string;
+  rowDivider: string;
+  primary: string;
+  primaryForeground: string;
+  primaryMuted: string;
+  income: string;
+  expense: string;
+  expenseMuted: string;
+  heading: string;
+  tabActive: string;
+  fabShadow: string;
+  isDark: boolean;
+}
+
+export const DARK: ThemeColors = {
   bg: '#0F0F0F',
   card: '#161616',
   card2: '#1A1A1A',
@@ -17,14 +51,23 @@ export const DARK = {
   placeholder: '#374151',
   inputBg: '#1A1A1A',
   rowDivider: 'rgba(255,255,255,0.05)',
+  primary: palette.primary,
+  primaryForeground: palette.onPrimary,
+  primaryMuted: withAlpha(palette.primary, '33'),
+  income: incomeDark,
+  expense: palette.expense,
+  expenseMuted: withAlpha(palette.expense, '33'),
+  heading: palette.primaryDark,
+  tabActive: palette.primary,
+  fabShadow: palette.primary,
   isDark: true,
 };
 
-export const LIGHT = {
-  bg: '#F2F2F7',
+export const LIGHT: ThemeColors = {
+  bg: '#EFF9FD',
   card: '#FFFFFF',
-  card2: '#F9F9F9',
-  card3: '#EFEFEF',
+  card2: '#F5FCFE',
+  card3: '#E8F4FA',
   text: '#000000',
   subtext: '#3C3C43',
   muted: '#8E8E93',
@@ -36,10 +79,17 @@ export const LIGHT = {
   placeholder: '#AEAEB2',
   inputBg: '#FFFFFF',
   rowDivider: 'rgba(0,0,0,0.06)',
+  primary: palette.primary,
+  primaryForeground: palette.onPrimary,
+  primaryMuted: withAlpha(palette.primary, '55'),
+  income: incomeLight,
+  expense: palette.expense,
+  expenseMuted: withAlpha(palette.expense, '33'),
+  heading: palette.primaryDark,
+  tabActive: palette.primaryDark,
+  fabShadow: palette.primaryDark,
   isDark: false,
 };
-
-export type ThemeColors = typeof DARK;
 
 interface ThemeContextType {
   colors: ThemeColors;

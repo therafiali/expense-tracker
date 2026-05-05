@@ -28,7 +28,7 @@ export async function requestPermissions() {
       name: 'Reminders',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#10B981',
+      lightColor: '#A5E8FD',
     });
   }
   

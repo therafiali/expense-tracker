@@ -15,6 +15,8 @@ export interface UserProfile {
   name: string;
   email?: string;
   currency: string;
+  /** Optional avatar (remote URL or `file://` after picking an image). */
+  avatarUri?: string;
 }
 
 export interface MonthData {

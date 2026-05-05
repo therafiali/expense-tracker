@@ -5,6 +5,7 @@ import { Plus, ArrowUpRight, BarChart3, History, Settings } from 'lucide-react-n
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { palette } from '@/constants/designTokens';
 
 export function ActionDock() {
   const router = useRouter();
@@ -15,7 +16,7 @@ export function ActionDock() {
       id: 'income', 
       icon: ArrowUpRight, 
       label: 'Income', 
-      color: '#10B981', 
+      color: palette.primaryDark, 
       onPress: () => router.push('/add-income') 
     },
     { 
@@ -71,12 +72,12 @@ export function ActionDock() {
                   style={[
                     styles.iconWrapper, 
                     action.isPrimary && styles.primaryIconWrapper,
-                    { backgroundColor: action.isPrimary ? '#10B981' : 'transparent' }
+                    { backgroundColor: action.isPrimary ? palette.primary : 'transparent' }
                   ]}
                 >
                   <action.icon 
                     size={action.isPrimary ? 28 : 22} 
-                    color={action.isPrimary ? '#000000' : action.color} 
+                    color={action.isPrimary ? palette.onPrimary : action.color} 
                   />
                 </View>
                 {!action.isPrimary && (

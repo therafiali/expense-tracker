@@ -33,7 +33,7 @@ const BUILTIN_CATEGORY_COLORS: Record<string, string> = {
   Repair: '#6366F1',
   Shopping: '#EC4899',
   Course: '#8B5CF6',
-  Education: '#10B981',
+  Education: '#C14EE4',
   Other: '#6B7280',
 };
 

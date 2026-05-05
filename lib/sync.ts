@@ -1,7 +1,24 @@
 import { supabase } from './supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Session } from '@supabase/supabase-js';
 import { getMonthKey, MonthData, Transaction, UserProfile } from './types';
 import { parseISO } from 'date-fns';
+import { DeviceEventEmitter } from 'react-native';
+
+/** Fired after cloud data is merged into AsyncStorage so list screens can reload. */
+export const TRANSACTIONS_SYNCED_EVENT = 'aco_transactions_synced';
+
+function emitTransactionsSynced() {
+  DeviceEventEmitter.emit(TRANSACTIONS_SYNCED_EVENT);
+}
+
+async function getSessionWithBriefRetry(): Promise<Session | null> {
+  const first = await supabase.auth.getSession();
+  if (first.data.session) return first.data.session;
+  await new Promise((r) => setTimeout(r, 450));
+  const second = await supabase.auth.getSession();
+  return second.data.session;
+}
 
 /**
  * Sync between AsyncStorage and Supabase.
@@ -142,14 +159,16 @@ export const syncCloudToLocal = async () => {
     const merged = mergeMonthData(local, cloudData);
     await AsyncStorage.setItem(key, JSON.stringify(merged));
   }
+
+  emitTransactionsSynced();
 };
 
 /** Single-transaction upsert (insert or replace by id). */
 export const pushTransaction = async (transaction: Transaction) => {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session || !transaction.id) return;
+  if (!transaction.id) return;
+
+  const session = await getSessionWithBriefRetry();
+  if (!session) return;
 
   const row = rowFromTransaction(session.user.id, transaction as Transaction & { id: string });
 

@@ -26,8 +26,10 @@ import {
 import { iconForCategory, colorForCategory } from '@/components/category-icon';
 
 import { useTheme } from '@/lib/theme';
+import { useScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
 
 export default function ReportsScreen() {
+  const scrollRef = useScrollToTopOnFocus();
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
@@ -60,7 +62,7 @@ export default function ReportsScreen() {
     const html = `
       <html><head><style>
         body { font-family: Helvetica, sans-serif; padding: 40px; color: #111; }
-        h1 { color: #10B981; margin-bottom: 4px; }
+        h1 { color: #2A6174; margin-bottom: 4px; }
         .sub { color: #666; margin-bottom: 30px; }
         .summary { display:flex; gap:16px; margin-bottom:30px; }
         .card { flex:1; background:#f4f4f4; border-radius:10px; padding:16px; text-align:center; }
@@ -69,13 +71,13 @@ export default function ReportsScreen() {
         table { width:100%; border-collapse:collapse; font-size:13px; }
         th { text-align:left; padding:10px 8px; border-bottom:2px solid #eee; color:#444; }
         td { padding:10px 8px; border-bottom:1px solid #f0f0f0; }
-        .inc { color:#10B981; font-weight:bold; }
+        .inc { color:#2A6174; font-weight:bold; }
         .exp { color:#EF4444; font-weight:bold; }
       </style></head><body>
         <h1>WalletWatch Report</h1>
         <p class="sub">${format(currentDate, 'MMMM yyyy')}</p>
         <div class="summary">
-          <div class="card"><h3>Income</h3><p style="color:#10B981">${currencySymbol}${totalIncome.toFixed(2)}</p></div>
+          <div class="card"><h3>Income</h3><p style="color:#2A6174">${currencySymbol}${totalIncome.toFixed(2)}</p></div>
           <div class="card"><h3>Expenses</h3><p style="color:#EF4444">${currencySymbol}${totalExpenses.toFixed(2)}</p></div>
           <div class="card"><h3>Balance</h3><p>${currencySymbol}${balance.toFixed(2)}</p></div>
         </div>
@@ -106,22 +108,29 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.headerRow}>
           <Text style={[styles.pageTitle, { color: colors.text }]}>Reports</Text>
           <TouchableOpacity
-            style={styles.exportBtn}
+            style={[
+              styles.exportBtn,
+              { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+            ]}
             onPress={handleExport}
             disabled={exporting || allTx.length === 0}
             activeOpacity={0.8}
           >
             {exporting ? (
-              <ActivityIndicator size="small" color="#10B981" />
+              <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <>
-                <Download size={15} color="#10B981" />
-                <Text style={styles.exportText}>Download PDF</Text>
+                <Download size={15} color={colors.heading} />
+                <Text style={[styles.exportText, { color: colors.heading }]}>Download PDF</Text>
               </>
             )}
           </TouchableOpacity>
@@ -142,7 +151,7 @@ export default function ReportsScreen() {
         <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.summaryLabel, { color: colors.muted }]}>Income</Text>
-            <Text style={[styles.summaryValue, { color: '#10B981' }]}>
+            <Text style={[styles.summaryValue, { color: colors.income }]}>
               {totalIncome.toFixed(0)}
             </Text>
           </View>
@@ -154,7 +163,7 @@ export default function ReportsScreen() {
           </View>
           <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.summaryLabel, { color: colors.muted }]}>Balance</Text>
-            <Text style={[styles.summaryValue, { color: balance >= 0 ? '#10B981' : '#EF4444' }]}>
+            <Text style={[styles.summaryValue, { color: balance >= 0 ? colors.income : colors.expense }]}>
               {Math.abs(balance).toFixed(0)}
             </Text>
           </View>
@@ -164,7 +173,7 @@ export default function ReportsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Transactions</Text>
 
         {loading ? (
-          <ActivityIndicator color="#10B981" style={{ marginTop: 24 }} />
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
         ) : allTx.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.emptyText, { color: colors.muted }]}>No transactions for {format(currentDate, 'MMMM yyyy')}.</Text>
@@ -179,7 +188,7 @@ export default function ReportsScreen() {
                 ? iconForCategory(t.category)
                 : ArrowDownLeft;
               const color = isIncome
-                ? '#10B981'
+                ? colors.income
                 : t.category
                 ? colorForCategory(t.category)
                 : '#EF4444';
@@ -207,7 +216,7 @@ export default function ReportsScreen() {
                     </Text>
                   </View>
                   <View style={styles.txRight}>
-                    <Text style={[styles.txAmount, { color: isIncome ? '#10B981' : '#EF4444' }]}>
+                    <Text style={[styles.txAmount, { color: isIncome ? colors.income : colors.expense }]}>
                       {isIncome ? '+' : '-'}{t.amount.toFixed(2)}
                     </Text>
                     <Text style={[styles.txDate, { color: colors.placeholder }]}>{format(new Date(t.date), 'MMM d')}</Text>
@@ -239,14 +248,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#10B98118',
     borderWidth: 1,
-    borderColor: '#10B98130',
-    borderRadius: 20,
+    borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  exportText: { fontSize: 13, fontWeight: '600', color: '#10B981' },
+  exportText: { fontSize: 13, fontWeight: '600' },
   monthRow: {
     flexDirection: 'row',
     alignItems: 'center',

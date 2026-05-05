@@ -67,7 +67,7 @@ export const DEFAULT_CATEGORIES = [
   { id: 'Repair', label: 'Repair', icon: 'Wrench', color: '#6366F1' },
   { id: 'Shopping', label: 'Shopping', icon: 'ShoppingBag', color: '#EC4899' },
   { id: 'Course', label: 'Course', icon: 'BookOpen', color: '#8B5CF6' },
-  { id: 'Education', label: 'Education', icon: 'GraduationCap', color: '#10B981' },
+  { id: 'Education', label: 'Education', icon: 'GraduationCap', color: '#C14EE4' },
   { id: 'Other', label: 'Other', icon: 'CircleEllipsis', color: '#6B7280' },
 ];
 

@@ -35,8 +35,11 @@ import { supabase } from '@/lib/supabase';
 import { syncAll } from '@/lib/sync';
 import { Session } from '@supabase/supabase-js';
 import { useTheme } from '@/lib/theme';
+import { radii } from '@/constants/designTokens';
+import { useScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
 
 export default function ProfileScreen() {
+  const scrollRef = useScrollToTopOnFocus();
   const [profile, setProfile] = useState<UserProfile>({ name: '', email: '', currency: 'USD' });
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -178,11 +181,23 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.avatarSection}>
-          <View style={[styles.avatar, { backgroundColor: isDark ? '#10B98118' : '#10B98110', borderColor: isDark ? '#10B98140' : '#10B98120' }]}>
-            <User size={36} color="#10B981" />
+          <View
+            style={[
+              styles.avatar,
+              {
+                backgroundColor: colors.primaryMuted,
+                borderColor: colors.primary,
+              },
+            ]}
+          >
+            <User size={36} color={colors.heading} />
           </View>
           <Text style={[styles.avatarName, { color: colors.text }]}>{profile.name || 'Your Name'}</Text>
           <Text style={[styles.avatarEmail, { color: colors.subtext }]}>{profile.email || 'Set your email below'}</Text>
@@ -216,9 +231,12 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-          <Save size={16} color="#000" />
-          <Text style={styles.saveBtnText}>Save Profile</Text>
+        <TouchableOpacity
+          style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+          onPress={handleSave}
+        >
+          <Save size={16} color={colors.primaryForeground} />
+          <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>Save Profile</Text>
         </TouchableOpacity>
 
         {/* Settings */}
@@ -233,7 +251,7 @@ export default function ProfileScreen() {
             <CreditCard size={18} color={colors.subtext} />
             <Text style={[styles.rowText, { color: colors.text }]}>Currency</Text>
             <View style={styles.rowRight}>
-              <Text style={styles.rowValue}>{profile.currency}</Text>
+              <Text style={[styles.rowValue, { color: colors.income }]}>{profile.currency}</Text>
               <ChevronRight size={16} color={colors.placeholder} />
             </View>
           </TouchableOpacity>
@@ -245,8 +263,8 @@ export default function ProfileScreen() {
             <Switch
               value={isDark}
               onValueChange={toggleTheme}
-              trackColor={{ false: colors.placeholder, true: '#10B98150' }}
-              thumbColor={isDark ? '#10B981' : '#9CA3AF'}
+              trackColor={{ false: colors.placeholder, true: colors.primaryMuted }}
+              thumbColor={isDark ? colors.primary : colors.heading}
               style={styles.switch}
             />
           </View>
@@ -279,8 +297,11 @@ export default function ProfileScreen() {
                   secureTextEntry
                 />
                 <View style={styles.authBtns}>
-                  <TouchableOpacity style={styles.authPrimaryBtn} onPress={handleAuth}>
-                    <Text style={styles.authPrimaryText}>
+                  <TouchableOpacity
+                    style={[styles.authPrimaryBtn, { backgroundColor: colors.primary }]}
+                    onPress={handleAuth}
+                  >
+                    <Text style={[styles.authPrimaryText, { color: colors.primaryForeground }]}>
                       {authMode === 'login' ? 'Login' : 'Sign Up'}
                     </Text>
                   </TouchableOpacity>
@@ -291,7 +312,7 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <View style={styles.authPrompt}>
-                <Cloud size={28} color="#10B981" />
+                <Cloud size={28} color={colors.primary} />
                 <Text style={[styles.authPromptText, { color: colors.subtext }]}>Sync data across devices</Text>
                 <View style={styles.authPromptBtns}>
                   <TouchableOpacity style={[styles.authChip, { backgroundColor: colors.card2, borderColor: colors.border }]} onPress={() => setAuthMode('login')}>
@@ -303,13 +324,27 @@ export default function ProfileScreen() {
                     <Text style={[styles.authChipText, { color: colors.text }]}>Sign Up</Text>
                   </TouchableOpacity>
                 </View>
+                <TouchableOpacity
+                  style={[styles.syncWhenSignedOutRow, { borderColor: colors.border }]}
+                  onPress={() =>
+                    Alert.alert(
+                      'Sign in to sync',
+                      'Transactions are saved on this device. Sign in to back them up to the cloud and load data on a new phone.',
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <RefreshCw size={16} color={colors.subtext} />
+                  <Text style={[styles.syncWhenSignedOutText, { color: colors.muted }]}>Sync from cloud</Text>
+                  <ChevronRight size={14} color={colors.placeholder} />
+                </TouchableOpacity>
               </View>
             )
           ) : (
             <View>
               <View style={styles.row}>
-                <Cloud size={18} color="#10B981" />
-                <Text style={[styles.rowText, { color: '#10B981' }]} numberOfLines={1}>
+                <Cloud size={18} color={colors.primary} />
+                <Text style={[styles.rowText, { color: colors.income }]} numberOfLines={1}>
                   {session.user.email}
                 </Text>
                 <TouchableOpacity onPress={handleSignOut} style={styles.rowRight}>
@@ -344,11 +379,11 @@ export default function ProfileScreen() {
             <Text style={[styles.rowText, { color: colors.text }]}>Check for Updates</Text>
             <View style={styles.rowRight}>
               {updating ? (
-                <Text style={styles.rowValue}>Checking…</Text>
+                <Text style={[styles.rowValue, { color: colors.income }]}>Checking…</Text>
               ) : (
                 <>
                   <View style={[styles.versionBadge, { backgroundColor: colors.border }]}>
-                    <View style={styles.greenDot} />
+                    <View style={[styles.accentDot, { backgroundColor: colors.primary }]} />
                     <Text style={[styles.versionText, { color: colors.subtext }]}>
                       v{installedVersion}
                     </Text>
@@ -403,7 +438,7 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
-    borderRadius: 16,
+    borderRadius: radii.md,
     overflow: 'hidden',
     borderWidth: 1,
   },
@@ -419,7 +454,7 @@ const styles = StyleSheet.create({
   rowDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginHorizontal: 16 },
   rowText: { flex: 1, fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowValue: { fontSize: 14, color: '#10B981', fontWeight: '700' },
+  rowValue: { fontSize: 14, fontWeight: '700' },
   switch: { marginLeft: 'auto' },
 
   // TextInput inside rows
@@ -431,12 +466,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#10B981',
-    borderRadius: 14,
+    borderRadius: radii.lg,
     paddingVertical: 14,
     marginTop: 12,
   },
-  saveBtnText: { fontSize: 15, fontWeight: '700', color: '#000000' },
+  saveBtnText: { fontSize: 15, fontWeight: '700' },
 
   // Version badge
   versionBadge: {
@@ -448,7 +482,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 5,
   },
-  greenDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' },
+  accentDot: { width: 6, height: 6, borderRadius: 3 },
   versionText: { fontSize: 12, color: '#6B7280', fontWeight: '500' },
 
   // Auth prompt (not logged in)
@@ -459,6 +493,18 @@ const styles = StyleSheet.create({
   },
   authPromptText: { fontSize: 14, color: '#6B7280', textAlign: 'center' },
   authPromptBtns: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  syncWhenSignedOutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignSelf: 'stretch',
+  },
+  syncWhenSignedOutText: { flex: 1, fontSize: 13, fontWeight: '600' },
   authChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -466,7 +512,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
@@ -487,12 +533,11 @@ const styles = StyleSheet.create({
   authBtns: { flexDirection: 'row', gap: 10, marginTop: 4 },
   authPrimaryBtn: {
     flex: 1,
-    backgroundColor: '#10B981',
-    borderRadius: 10,
+    borderRadius: radii.md,
     padding: 13,
     alignItems: 'center',
   },
-  authPrimaryText: { fontSize: 14, fontWeight: '700', color: '#000' },
+  authPrimaryText: { fontSize: 14, fontWeight: '700' },
   authSecondaryBtn: { flex: 1, padding: 13, alignItems: 'center' },
   authSecondaryText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
 });

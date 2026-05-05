@@ -1,10 +1,13 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Home, BarChart2, PlusCircle, FileText, User } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Home, BarChart2, Plus, FileText, User, Menu } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, usePathname } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/lib/theme';
+import { Fonts } from '@/constants/fonts';
+import { chartGradients } from '@/constants/designTokens';
 
 function CustomTabBar() {
   const insets = useSafeAreaInsets();
@@ -15,9 +18,8 @@ function CustomTabBar() {
   const tabs = [
     { name: 'Home', icon: Home, route: '/(tabs)/' },
     { name: 'Charts', icon: BarChart2, route: '/(tabs)/charts' },
-    { name: null, icon: PlusCircle, route: '/add-transaction', isAdd: true },
     { name: 'Reports', icon: FileText, route: '/(tabs)/reports' },
-    { name: 'Profile', icon: User, route: '/(tabs)/profile' },
+    // { name: 'Profile', icon: User, route: '/(tabs)/profile' },
   ];
 
   const isActive = (route: string) => {
@@ -26,56 +28,87 @@ function CustomTabBar() {
     return pathname === `/${segment}` || pathname === `/(tabs)/${segment}`;
   };
 
-  return (
-    <View style={[
-      styles.tabBar, 
-      { 
-        paddingBottom: Math.max(insets.bottom, 8),
-        backgroundColor: colors.tabBar,
-        borderTopColor: colors.tabBorder,
-      }
-    ]}>
-      {tabs.map((tab, index) => {
-        const active = !tab.isAdd && isActive(tab.route);
-        const Icon = tab.icon;
+  const pillShadow =
+    Platform.OS === 'ios'
+      ? {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: colors.isDark ? 0.35 : 0.08,
+          shadowRadius: 16,
+        }
+      : { elevation: 6 };
 
-        if (tab.isAdd) {
+  const fabShadow =
+    Platform.OS === 'ios'
+      ? {
+          shadowColor: colors.fabShadow,
+          shadowOffset: { width: 0, height: 5 },
+          shadowOpacity: 0.35,
+          shadowRadius: 10,
+        }
+      : { elevation: 10 };
+
+  return (
+    <View
+      style={[
+        styles.barWrap,
+        {
+          paddingBottom: Math.max(insets.bottom, 12),
+          backgroundColor: colors.bg,
+        },
+      ]}
+    >
+
+      <View style={[styles.pill, { backgroundColor: colors.card }, pillShadow]}>
+        {tabs.map((tab) => {
+          const active = isActive(tab.route);
+          const Icon = tab.icon;
           return (
             <TouchableOpacity
-              key="add"
-              style={styles.addButton}
-              onPress={() => router.push('/add-transaction' as any)}
-              activeOpacity={0.85}
+              key={tab.name}
+              style={styles.pillTab}
+              onPress={() => router.push(tab.route as any)}
+              activeOpacity={0.75}
             >
-              <View style={styles.addButtonInner}>
-                <Icon size={28} color="#FFFFFF" />
-              </View>
+              <Icon
+                size={21}
+                color={active ? colors.tabActive : colors.tabInactive}
+                strokeWidth={active ? 2.5 : 2}
+              />
+              <Text
+                style={[
+                  styles.pillLabel,
+                  {
+                    fontFamily: Fonts.semibold,
+                    color: active ? colors.tabActive : colors.tabInactive,
+                  },
+                  active && styles.pillLabelActive,
+                ]}
+                numberOfLines={1}
+              >
+                {tab.name}
+              </Text>
             </TouchableOpacity>
           );
-        }
+        })}
+      </View>
 
-        return (
-          <TouchableOpacity
-            key={tab.name || index}
-            style={styles.tabItem}
-            onPress={() => router.push(tab.route as any)}
-            activeOpacity={0.7}
-          >
-            <Icon
-              size={22}
-              color={active ? '#10B981' : colors.tabInactive}
-              strokeWidth={active ? 2.5 : 2}
-            />
-            <Text style={[
-              styles.tabLabel, 
-              { color: active ? '#10B981' : colors.tabInactive },
-              active && styles.tabLabelActive
-            ]}>
-              {tab.name}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+      <TouchableOpacity
+        style={[styles.fabOuter, fabShadow]}
+        onPress={() => router.push('/add-transaction')}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel="Add transaction"
+      >
+        <LinearGradient
+          colors={[...chartGradients.fab]}
+          start={{ x: 0.15, y: 0 }}
+          end={{ x: 0.85, y: 1 }}
+          style={styles.fabGradient}
+        >
+          <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
+        </LinearGradient>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -101,45 +134,53 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
+  barWrap: {
     flexDirection: 'row',
-    borderTopWidth: 1,
+    alignItems: 'center',
+    paddingHorizontal: 14,
     paddingTop: 10,
-    paddingHorizontal: 8,
-    alignItems: 'flex-end',
+    gap: 10,
   },
-  tabItem: {
-    flex: 1,
+  menuBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    paddingBottom: 2,
   },
-  tabLabel: {
+  pill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    minHeight: 58,
+  },
+  pillTab: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    minWidth: 52,
+  },
+  pillLabel: {
     fontSize: 10,
-    fontWeight: '500',
+    letterSpacing: -0.2,
   },
-  tabLabelActive: {
+  pillLabelActive: {
     fontWeight: '700',
   },
-  addButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
+  fabOuter: {
+    borderRadius: 29,
+    overflow: 'hidden',
   },
-  addButtonInner: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#10B981',
+  fabGradient: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -24,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
   },
 });

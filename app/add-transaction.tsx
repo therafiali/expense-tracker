@@ -58,6 +58,8 @@ import {
   type Transaction,
 } from '@/lib/storage';
 import { useTheme } from '@/lib/theme';
+import { radii } from '@/constants/designTokens';
+import { useScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
 
 const ICON_MAP: Record<string, any> = {
   Fuel,
@@ -83,6 +85,7 @@ function applyTimeFrom(isoSource: string, calendarDate: Date): Date {
 }
 
 export default function AddTransactionScreen() {
+  const scrollRef = useScrollToTopOnFocus();
   const router = useRouter();
   const params = useLocalSearchParams<{ m?: string | string[]; id?: string | string[] }>();
   const monthParam = typeof params.m === 'string' ? params.m : Array.isArray(params.m) ? params.m[0] : undefined;
@@ -300,6 +303,7 @@ export default function AddTransactionScreen() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           style={{ flex: 1 }}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -307,20 +311,38 @@ export default function AddTransactionScreen() {
           {/* Type Toggle */}
           <View style={[styles.toggleContainer, { backgroundColor: colors.card }]}>
             <TouchableOpacity
-              style={[styles.toggleBtn, type === 'expense' && styles.toggleBtnExpenseActive]}
+              style={[
+                styles.toggleBtn,
+                type === 'expense' && { backgroundColor: colors.expenseMuted },
+              ]}
               onPress={() => setType('expense')}
               activeOpacity={0.8}
             >
-              <Text style={[styles.toggleText, { color: colors.muted }, type === 'expense' && styles.toggleTextExpenseActive]}>
+              <Text
+                style={[
+                  styles.toggleText,
+                  { color: colors.muted },
+                  type === 'expense' && { color: colors.expense, fontWeight: '800' },
+                ]}
+              >
                 Expense
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.toggleBtn, type === 'income' && styles.toggleBtnIncomeActive]}
+              style={[
+                styles.toggleBtn,
+                type === 'income' && { backgroundColor: colors.primaryMuted },
+              ]}
               onPress={() => setType('income')}
               activeOpacity={0.8}
             >
-              <Text style={[styles.toggleText, { color: colors.muted }, type === 'income' && styles.toggleTextIncomeActive]}>
+              <Text
+                style={[
+                  styles.toggleText,
+                  { color: colors.muted },
+                  type === 'income' && { color: colors.income, fontWeight: '800' },
+                ]}
+              >
                 Income
               </Text>
             </TouchableOpacity>
@@ -383,7 +405,7 @@ export default function AddTransactionScreen() {
                       returnKeyType="done"
                     />
                     <TouchableOpacity onPress={handleAddCategory} style={styles.newCatAddBtn}>
-                      <Plus size={16} color="#10B981" />
+                      <Plus size={16} color={colors.primary} />
                     </TouchableOpacity>
                   </View>
                 )}
@@ -394,8 +416,8 @@ export default function AddTransactionScreen() {
           {/* Income icon hint */}
           {type === 'income' && (
             <View style={styles.incomeHint}>
-              <View style={[styles.incomeIconBg, { backgroundColor: '#10B98115' }]}>
-                <Wallet size={28} color="#10B981" />
+              <View style={[styles.incomeIconBg, { backgroundColor: colors.primaryMuted }]}>
+                <Wallet size={28} color={colors.income} />
               </View>
               <Text style={[styles.incomeHintText, { color: colors.muted }]}>Add your income amount below</Text>
             </View>
@@ -527,7 +549,7 @@ export default function AddTransactionScreen() {
                                 style={[
                                   styles.dayCell,
                                   selected && styles.dayCellSelected,
-                                  selected && { backgroundColor: '#10B98130' },
+                                  selected && { backgroundColor: colors.primaryMuted },
                                 ]}
                                 onPress={() => {
                                   setTxDate(applyTimeFrom(timeSource, day));
@@ -539,7 +561,7 @@ export default function AddTransactionScreen() {
                                     styles.dayCellText,
                                     { color: colors.text },
                                     !inMonth && { color: colors.placeholder, opacity: 0.35 },
-                                    selected && { color: '#10B981', fontWeight: '800' },
+                                    selected && { color: colors.heading, fontWeight: '800' },
                                   ]}
                                 >
                                   {format(day, 'd')}
@@ -563,12 +585,22 @@ export default function AddTransactionScreen() {
 
           {/* Save button */}
           <TouchableOpacity
-            style={[styles.saveBtn, !canSave && [styles.saveBtnDisabled, { backgroundColor: colors.card }]]}
+            style={[
+              styles.saveBtn,
+              canSave && { backgroundColor: colors.primary },
+              !canSave && [styles.saveBtnDisabled, { backgroundColor: colors.card }],
+            ]}
             onPress={handleSave}
             disabled={!canSave || saving}
             activeOpacity={0.85}
           >
-            <Text style={[styles.saveBtnText, !canSave && [styles.saveBtnTextDisabled, { color: colors.muted }]]}>
+            <Text
+              style={[
+                styles.saveBtnText,
+                canSave && { color: colors.primaryForeground },
+                !canSave && [styles.saveBtnTextDisabled, { color: colors.muted }],
+              ]}
+            >
               {saving
                 ? 'Saving…'
                 : isEditMode
@@ -620,7 +652,7 @@ const styles = StyleSheet.create({
   // Type Toggle
   toggleContainer: {
     flexDirection: 'row',
-    borderRadius: 14,
+    borderRadius: radii.pill,
     padding: 4,
     marginBottom: 24,
   },
@@ -628,23 +660,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 11,
     alignItems: 'center',
-    borderRadius: 10,
-  },
-  toggleBtnExpenseActive: {
-    backgroundColor: '#EF444420',
-  },
-  toggleBtnIncomeActive: {
-    backgroundColor: '#10B98120',
+    borderRadius: radii.pill,
   },
   toggleText: {
     fontSize: 15,
     fontWeight: '600',
-  },
-  toggleTextExpenseActive: {
-    color: '#EF4444',
-  },
-  toggleTextIncomeActive: {
-    color: '#10B981',
   },
   // Section
   section: {
@@ -667,7 +687,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
-    borderRadius: 12,
+    borderRadius: radii.md,
     paddingHorizontal: 10,
     paddingVertical: 8,
     width: '31.5%', // Approx 3 columns
@@ -677,7 +697,7 @@ const styles = StyleSheet.create({
   categoryIconBgSmall: {
     width: 28,
     height: 28,
-    borderRadius: 8,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -688,7 +708,7 @@ const styles = StyleSheet.create({
   newCatInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: radii.md,
     paddingHorizontal: 10,
     width: '65%',
     height: 44,
@@ -711,7 +731,7 @@ const styles = StyleSheet.create({
   incomeIconBg: {
     width: 64,
     height: 64,
-    borderRadius: 20,
+    borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -720,7 +740,7 @@ const styles = StyleSheet.create({
   },
   // Note
   noteInput: {
-    borderRadius: 14,
+    borderRadius: radii.md,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
@@ -756,7 +776,7 @@ const styles = StyleSheet.create({
   amountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: radii.md,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderWidth: 1,
@@ -769,8 +789,7 @@ const styles = StyleSheet.create({
   },
   // Save button
   saveBtn: {
-    backgroundColor: '#10B981',
-    borderRadius: 14,
+    borderRadius: radii.lg,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 12,
@@ -779,7 +798,6 @@ const styles = StyleSheet.create({
   saveBtnText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#000000',
   },
   saveBtnTextDisabled: {},
   dateModalOverlay: {
@@ -803,7 +821,7 @@ const styles = StyleSheet.create({
   dateModalChevron: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -831,10 +849,10 @@ const styles = StyleSheet.create({
     maxHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 10,
+    borderRadius: radii.sm,
   },
   dayCellSelected: {
-    borderRadius: 10,
+    borderRadius: radii.sm,
   },
   dayCellText: {
     fontSize: 14,
@@ -843,7 +861,7 @@ const styles = StyleSheet.create({
   dateModalClose: {
     marginTop: 12,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: radii.md,
     alignItems: 'center',
   },
   dateModalCloseText: {

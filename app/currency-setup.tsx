@@ -4,6 +4,9 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Check } from 'lucide-react-native';
 import { saveUserProfile } from '@/lib/storage';
+import { useTheme } from '@/lib/theme';
+import { radii } from '@/constants/designTokens';
+import { useFlatListScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
 
 const CURRENCIES = [
   { code: 'USD', name: 'US Dollar', symbol: '$' },
@@ -24,13 +27,12 @@ const CURRENCIES = [
   { code: 'KRW', name: 'South Korean Won', symbol: '₩' },
 ];
 
-import { useTheme } from '@/lib/theme';
-
 export default function CurrencySetup() {
+  const listRef = useFlatListScrollToTopOnFocus();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('USD');
   const router = useRouter();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
 
   const filtered = CURRENCIES.filter(
     c => c.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -65,6 +67,7 @@ export default function CurrencySetup() {
       </View>
 
       <FlatList
+        ref={listRef}
         data={filtered}
         keyExtractor={(item) => item.code}
         contentContainerStyle={styles.list}
@@ -73,7 +76,10 @@ export default function CurrencySetup() {
             style={[
               styles.item, 
               { backgroundColor: colors.card, borderColor: colors.border },
-              selected === item.code && [styles.selectedItem, { borderColor: '#10B981', backgroundColor: '#10B98110' }]
+              selected === item.code && [
+                styles.selectedItem,
+                { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
+              ]
             ]}
             onPress={() => setSelected(item.code)}
           >
@@ -85,15 +91,18 @@ export default function CurrencySetup() {
               </View>
             </View>
             {selected === item.code && (
-              <Check size={20} color="#10B981" />
+              <Check size={20} color={colors.heading} />
             )}
           </TouchableOpacity>
         )}
       />
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.button} onPress={handleContinue}>
-          <Text style={styles.buttonText}>Continue</Text>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: colors.primary }]}
+          onPress={handleContinue}
+        >
+          <Text style={[styles.buttonText, { color: colors.primaryForeground }]}>Continue</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -123,7 +132,7 @@ const styles = StyleSheet.create({
     margin: 24,
     marginTop: 0,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: radii.md,
     height: 50,
   },
   searchIcon: {
@@ -141,7 +150,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    borderRadius: 16,
+    borderRadius: radii.md,
     marginBottom: 12,
     borderWidth: 1,
   },
@@ -168,14 +177,12 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   button: {
-    backgroundColor: '#10B981',
     height: 56,
-    borderRadius: 16,
+    borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonText: {
-    color: '#000000',
     fontSize: 18,
     fontWeight: 'bold',
   },

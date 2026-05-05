@@ -6,24 +6,37 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
+  DeviceEventEmitter,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, addMonths, subMonths } from 'date-fns';
-import { ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft } from 'lucide-react-native';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpRight,
+  ArrowDownLeft,
+  User,
+} from 'lucide-react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 
 import {
   getMonthData,
   getSummaries,
+  getUserProfile,
   type MonthData,
   type Transaction,
 } from '@/lib/storage';
 import { iconForCategory, colorForCategory } from '@/components/category-icon';
 
 import { useTheme } from '@/lib/theme';
+import { TRANSACTIONS_SYNCED_EVENT } from '@/lib/sync';
+import { FALLBACK_PROFILE_AVATAR_URI } from '@/constants/profileDisplay';
+import { useScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
 
 export default function HomeScreen() {
+  const scrollRef = useScrollToTopOnFocus();
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [data, setData] = useState<MonthData>({ income: [], expenses: [] });
@@ -31,6 +44,8 @@ export default function HomeScreen() {
   const isFocused = useIsFocused();
   const { colors } = useTheme();
   const monthSlug = format(currentDate, 'yyyy_MM');
+  const [profileAvatarUri, setProfileAvatarUri] = useState(FALLBACK_PROFILE_AVATAR_URI);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -43,6 +58,25 @@ export default function HomeScreen() {
     if (isFocused) loadData();
   }, [isFocused, loadData]);
 
+  useEffect(() => {
+    if (!isFocused) return;
+    let cancelled = false;
+    getUserProfile().then((p) => {
+      if (cancelled) return;
+      const uri = p?.avatarUri?.trim();
+      setProfileAvatarUri(uri || FALLBACK_PROFILE_AVATAR_URI);
+      setAvatarLoadFailed(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isFocused]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(TRANSACTIONS_SYNCED_EVENT, loadData);
+    return () => sub.remove();
+  }, [loadData]);
+
   const { totalIncome, totalExpenses, balance } = getSummaries(data);
 
   const allTransactions: Transaction[] = [
@@ -53,18 +87,44 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={loadData} tintColor="#10B981" />
+          <RefreshControl refreshing={loading} onRefresh={loadData} tintColor={colors.primary} />
         }
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <View style={styles.topHeader}>
           <View>
-            <Text style={[styles.greeting, { color: colors.text }]}>WalletWatch</Text>
+            <Text style={[styles.greeting, { color: colors.text }]}>ACO</Text>
             <Text style={[styles.subGreeting, { color: colors.muted }]}>{format(new Date(), 'EEEE, d MMMM')}</Text>
           </View>
+          <TouchableOpacity
+            style={[
+              styles.profileBtn,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+            onPress={() => router.push('/(tabs)/profile' as any)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="Profile"
+          >
+            {avatarLoadFailed ? (
+              <User size={22} color={colors.heading} strokeWidth={2} />
+            ) : (
+              <Image
+                source={{ uri: profileAvatarUri }}
+                style={styles.profileImage}
+                contentFit="cover"
+                transition={150}
+                onError={() => setAvatarLoadFailed(true)}
+              />
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Balance Card */}
@@ -87,18 +147,18 @@ export default function HomeScreen() {
           {/* Income / Expense strip */}
           <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
             <View style={styles.statItem}>
-              <View style={[styles.statDot, { backgroundColor: '#10B981' }]} />
+              <View style={[styles.statDot, { backgroundColor: colors.income }]} />
               <View>
                 <Text style={[styles.statLabel, { color: colors.muted }]}>Income</Text>
-                <Text style={styles.statIncome}>{totalIncome.toFixed(0)}</Text>
+                <Text style={[styles.statIncome, { color: colors.income }]}>{totalIncome.toFixed(0)}</Text>
               </View>
             </View>
             <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
             <View style={styles.statItem}>
-              <View style={[styles.statDot, { backgroundColor: '#EF4444' }]} />
+              <View style={[styles.statDot, { backgroundColor: colors.expense }]} />
               <View>
                 <Text style={[styles.statLabel, { color: colors.muted }]}>Expenses</Text>
-                <Text style={styles.statExpense}>{totalExpenses.toFixed(0)}</Text>
+                <Text style={[styles.statExpense, { color: colors.expense }]}>{totalExpenses.toFixed(0)}</Text>
               </View>
             </View>
           </View>
@@ -122,7 +182,7 @@ export default function HomeScreen() {
                 ? iconForCategory(t.category)
                 : ArrowDownLeft;
               const color = isIncome
-                ? '#10B981'
+                ? colors.income
                 : t.category
                 ? colorForCategory(t.category)
                 : '#EF4444';
@@ -155,7 +215,7 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <View style={styles.txRight}>
-                    <Text style={[styles.txAmount, { color: isIncome ? '#10B981' : '#EF4444' }]}>
+                    <Text style={[styles.txAmount, { color: isIncome ? colors.income : colors.expense }]}>
                       {isIncome ? '+' : '-'}{t.amount.toFixed(2)}
                     </Text>
                     <Text style={[styles.txDate, { color: colors.placeholder }]}>{format(new Date(t.date), 'MMM d')}</Text>
@@ -178,12 +238,26 @@ const styles = StyleSheet.create({
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingTop: 20,
     paddingBottom: 16,
   },
   greeting: { fontSize: 22, fontWeight: '800' },
   subGreeting: { fontSize: 13, marginTop: 2 },
+  profileBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+  },
   // Balance Card
   balanceCard: {
     borderRadius: 20,
@@ -219,8 +293,8 @@ const styles = StyleSheet.create({
   statItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   statDot: { width: 8, height: 8, borderRadius: 4 },
   statLabel: { fontSize: 11 },
-  statIncome: { fontSize: 15, fontWeight: '700', color: '#10B981' },
-  statExpense: { fontSize: 15, fontWeight: '700', color: '#EF4444' },
+  statIncome: { fontSize: 15, fontWeight: '700' },
+  statExpense: { fontSize: 15, fontWeight: '700' },
   statDivider: { width: 1, height: 32, marginHorizontal: 8 },
   // Section
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },

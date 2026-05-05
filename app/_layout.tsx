@@ -1,11 +1,14 @@
 import { requestPermissions, scheduleDailyReminder } from "@/lib/notifications";
 import { getUserProfile } from "@/lib/storage";
+import { supabase } from "@/lib/supabase";
+import { syncAll } from "@/lib/sync";
 import { ThemeProvider, useTheme } from "@/lib/theme";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider as NavigationThemeProvider,
 } from "@react-navigation/native";
+import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
@@ -34,6 +37,17 @@ function RootLayoutContent() {
     }
     setup();
   }, [segments]);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) return;
+      if (event !== "INITIAL_SESSION" && event !== "SIGNED_IN") return;
+      void syncAll();
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!isReady || __DEV__ || hasCheckedUpdate.current) return;
@@ -96,6 +110,7 @@ function RootLayoutContent() {
     <NavigationThemeProvider value={navTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="modal" options={{ presentation: "modal" }} />
         <Stack.Screen
           name="add-transaction"
           options={{
@@ -110,6 +125,17 @@ function RootLayoutContent() {
 }
 
 export default function RootLayout() {
+  /** Deep `require`s only — avoid `@expo-google-fonts/inter` index (pulls every weight and breaks Metro). */
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular: require("@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf"),
+    Inter_500Medium: require("@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf"),
+    Inter_600SemiBold: require("@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf"),
+    Inter_700Bold: require("@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf"),
+    Inter_800ExtraBold: require("@expo-google-fonts/inter/800ExtraBold/Inter_800ExtraBold.ttf"),
+  });
+
+  if (!fontsLoaded) return null;
+
   return (
     <ThemeProvider>
       <RootLayoutContent />
