@@ -11,10 +11,13 @@ import {
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { ActivityIndicator, Alert, View } from "react-native";
 import "../global.css";
+
+void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
   const router = useRouter();
@@ -24,18 +27,35 @@ function RootLayoutContent() {
   const { colors, isDark } = useTheme();
 
   useEffect(() => {
-    async function setup() {
-      const hasPermission = await requestPermissions();
-      if (hasPermission) await scheduleDailyReminder();
+    let cancelled = false;
 
-      const profile = await getUserProfile();
-      const inAuthGroup = segments[0] === "currency-setup";
-      if (!profile && !inAuthGroup) {
-        router.replace("/currency-setup");
+    async function setup() {
+      try {
+        const hasPermission = await requestPermissions();
+        if (hasPermission) {
+          try {
+            await scheduleDailyReminder();
+          } catch (e) {
+            console.warn("[startup] scheduleDailyReminder failed:", e);
+          }
+        }
+
+        const profile = await getUserProfile();
+        const inAuthGroup = segments[0] === "currency-setup";
+        if (!cancelled && !profile && !inAuthGroup) {
+          router.replace("/currency-setup");
+        }
+      } catch (e) {
+        console.error("[startup] root setup failed:", e);
+      } finally {
+        if (!cancelled) setIsReady(true);
       }
-      setIsReady(true);
     }
-    setup();
+
+    void setup();
+    return () => {
+      cancelled = true;
+    };
   }, [segments]);
 
   useEffect(() => {
@@ -126,7 +146,7 @@ function RootLayoutContent() {
 
 export default function RootLayout() {
   /** Deep `require`s only — avoid `@expo-google-fonts/inter` index (pulls every weight and breaks Metro). */
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular: require("@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf"),
     Inter_500Medium: require("@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf"),
     Inter_600SemiBold: require("@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf"),
@@ -134,7 +154,34 @@ export default function RootLayout() {
     Inter_800ExtraBold: require("@expo-google-fonts/inter/800ExtraBold/Inter_800ExtraBold.ttf"),
   });
 
-  if (!fontsLoaded) return null;
+  const fontsResolved = fontsLoaded || fontError != null;
+
+  useEffect(() => {
+    if (fontsResolved) {
+      void SplashScreen.hideAsync();
+    }
+  }, [fontsResolved]);
+
+  useEffect(() => {
+    if (fontError) {
+      console.warn("[fonts] Inter failed to load, using system fonts:", fontError);
+    }
+  }, [fontError]);
+
+  if (!fontsResolved) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#EFF9FD",
+        }}
+      >
+        <ActivityIndicator size="large" color="#2A6174" />
+      </View>
+    );
+  }
 
   return (
     <ThemeProvider>

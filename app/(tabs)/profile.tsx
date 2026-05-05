@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
   Switch,
+  ActivityIndicator,
   useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -177,7 +178,15 @@ export default function ProfileScreen() {
     );
   };
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -409,6 +418,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scroll: { paddingHorizontal: 16, paddingBottom: 40 },
 
   // Avatar
