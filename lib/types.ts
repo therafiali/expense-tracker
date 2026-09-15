@@ -57,6 +57,32 @@ export interface GoalProgressEntry {
   updatedAt: string;
 }
 
+/** One-time date, same calendar day each month, or every N days. */
+export type ReminderKind = 'once' | 'monthly' | 'interval';
+
+export interface Reminder {
+  id: string;
+  title: string;
+  note?: string;
+  kind: ReminderKind;
+  /** Time of day as HH:mm */
+  time: string;
+  /** ISO datetime for one-time reminders */
+  fireAt?: string;
+  /** Day of month 1-31 for monthly reminders */
+  monthDay?: number;
+  /** Repeat every N days for interval reminders */
+  intervalDays?: number;
+  /** When the current interval clock started */
+  intervalStartAt?: string;
+  /** Set when the user marks an interval reminder done */
+  lastCompletedAt?: string;
+  enabled: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const getMonthKey = (date: Date) => `data_${format(date, 'yyyy_MM')}`;
 
 

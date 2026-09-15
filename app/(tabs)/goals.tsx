@@ -1,24 +1,47 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
-import { Plus, Bell, BellOff, Minus, Check } from 'lucide-react-native';
-import { useTheme } from '@/lib/theme';
 import {
   adjustGoalProgress,
   archiveGoal,
   getActiveGoals,
   getGoalProgressSummary,
   syncGoalPeriods,
-} from '@/lib/goals';
-import { Goal } from '@/lib/types';
-import { requestPermissions, syncGoalReminderSchedules } from '@/lib/notifications';
+} from "@/lib/goals";
+import {
+  requestPermissions,
+  resyncNotificationSchedules,
+  syncGoalReminderSchedules,
+} from "@/lib/notifications";
+import {
+  archiveReminder,
+  formatReminderSchedule,
+  getActiveReminders,
+  isReminderOverdue,
+  markReminderDone,
+  reminderKindLabel,
+  sortReminders,
+} from "@/lib/reminders";
+import { useTheme } from "@/lib/theme";
+import { Goal, Reminder } from "@/lib/types";
+import { useIsFocused } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import { Bell, BellOff, Check, Minus, Plus } from "lucide-react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-const PERIOD_LABEL: Record<Goal['period'], string> = {
-  daily: 'day',
-  weekly: 'week',
-  monthly: 'month',
+type ScreenTab = "goals" | "reminders";
+
+const PERIOD_LABEL: Record<Goal["period"], string> = {
+  daily: "day",
+  weekly: "week",
+  monthly: "month",
 };
 
 function GoalCard({
@@ -39,19 +62,27 @@ function GoalCard({
   onDelete: () => void;
 }) {
   const { colors } = useTheme();
-  const progress = Math.min(100, Math.round((goal.completedCount / goal.targetCount) * 100));
+  const progress = Math.min(
+    100,
+    Math.round((goal.completedCount / goal.targetCount) * 100),
+  );
 
   return (
     <TouchableOpacity
       activeOpacity={0.9}
-      style={[styles.goalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+      style={[
+        styles.goalCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
       onPress={onEdit}
     >
       <View style={styles.goalHeader}>
         <View style={styles.goalTitleRow}>
-          <Text style={styles.goalEmoji}>{goal.emoji || '🎯'}</Text>
+          <Text style={styles.goalEmoji}>{goal.emoji || "🎯"}</Text>
           <View>
-            <Text style={[styles.goalTitle, { color: colors.text }]}>{goal.title}</Text>
+            <Text style={[styles.goalTitle, { color: colors.text }]}>
+              {goal.title}
+            </Text>
             <Text style={[styles.goalMeta, { color: colors.muted }]}>
               {goal.targetCount} times per {PERIOD_LABEL[goal.period]}
             </Text>
@@ -67,46 +98,182 @@ function GoalCard({
       </View>
 
       <View style={[styles.progressTrack, { backgroundColor: colors.card2 }]}>
-        <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
+        <View
+          style={[
+            styles.progressFill,
+            { width: `${progress}%`, backgroundColor: colors.primary },
+          ]}
+        />
       </View>
 
       <View style={styles.progressRow}>
         <Text style={[styles.progressText, { color: colors.text }]}>
           {goal.completedCount}/{goal.targetCount}
         </Text>
-        <Text style={[styles.progressSubText, { color: colors.muted }]}>{progress}% complete</Text>
+        <Text style={[styles.progressSubText, { color: colors.muted }]}>
+          {progress}% complete
+        </Text>
       </View>
 
-      <View style={[styles.statsCard, { backgroundColor: colors.card2, borderColor: colors.border }]}>
+      <View
+        style={[
+          styles.statsCard,
+          { backgroundColor: colors.card2, borderColor: colors.border },
+        ]}
+      >
         <View style={styles.statCol}>
-          <Text style={[styles.statValue, { color: colors.text }]}>{totalDone}</Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Total done</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>
+            {totalDone}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.muted }]}>
+            Total done
+          </Text>
         </View>
         <View style={styles.statCol}>
-          <Text style={[styles.statValue, { color: colors.text }]}>{thisMonthDone}</Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Done this month</Text>
+          <Text style={[styles.statValue, { color: colors.text }]}>
+            {thisMonthDone}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.muted }]}>
+            Done this month
+          </Text>
         </View>
       </View>
 
       <View style={styles.actionsRow}>
         <TouchableOpacity
-          style={[styles.roundBtn, { borderColor: colors.border, backgroundColor: colors.card2 }]}
+          style={[
+            styles.roundBtn,
+            { borderColor: colors.border, backgroundColor: colors.card2 },
+          ]}
           onPress={onDecrement}
         >
           <Minus size={18} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.doneBtn, { backgroundColor: colors.primaryMuted, borderColor: colors.border }]}
+          style={[
+            styles.doneBtn,
+            {
+              backgroundColor: colors.primaryMuted,
+              borderColor: colors.border,
+            },
+          ]}
           onPress={onIncrement}
         >
           <Check size={20} color={colors.primary} />
-          <Text style={[styles.doneBtnLabel, { color: colors.primary }]}>Done</Text>
+          <Text style={[styles.doneBtnLabel, { color: colors.primary }]}>
+            Done
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.roundBtn, { borderColor: colors.border, backgroundColor: colors.card2 }]}
+          style={[
+            styles.roundBtn,
+            { borderColor: colors.border, backgroundColor: colors.card2 },
+          ]}
           onPress={onDelete}
         >
-          <Text style={[styles.deleteText, { color: '#EF4444' }]}>×</Text>
+          <Text style={[styles.deleteText, { color: "#EF4444" }]}>×</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function ReminderCard({
+  reminder,
+  onEdit,
+  onDelete,
+  onDone,
+}: {
+  reminder: Reminder;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDone: () => void;
+}) {
+  const { colors } = useTheme();
+  const overdue = isReminderOverdue(reminder);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      style={[
+        styles.goalCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+      onPress={onEdit}
+    >
+      <View style={styles.goalHeader}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
+          <Text style={[styles.goalTitle, { color: colors.text }]}>
+            {reminder.title}
+          </Text>
+          <Text style={[styles.goalMeta, { color: colors.muted }]}>
+            {reminderKindLabel(reminder.kind)}
+          </Text>
+        </View>
+        <View style={styles.goalRemindFlag}>
+          {reminder.enabled ? (
+            <Bell size={17} color={overdue ? "#EF4444" : colors.primary} />
+          ) : (
+            <BellOff size={17} color={colors.muted} />
+          )}
+        </View>
+      </View>
+
+      {reminder.note ? (
+        <Text style={[styles.progressSubText, { color: colors.muted }]}>
+          {reminder.note}
+        </Text>
+      ) : null}
+
+      <View
+        style={[
+          styles.statsCard,
+          {
+            backgroundColor: overdue ? colors.expenseMuted : colors.card2,
+            borderColor: colors.border,
+            flexDirection: "column",
+            alignItems: "flex-start",
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.reminderDue,
+            { color: overdue ? colors.expense : colors.text },
+          ]}
+        >
+          {formatReminderSchedule(reminder)}
+        </Text>
+      </View>
+
+      <View style={styles.actionsRow}>
+        {reminder.kind === "interval" ? (
+          <TouchableOpacity
+            style={[
+              styles.doneBtn,
+              {
+                backgroundColor: colors.primaryMuted,
+                borderColor: colors.border,
+              },
+            ]}
+            onPress={onDone}
+          >
+            <Check size={20} color={colors.primary} />
+            <Text style={[styles.doneBtnLabel, { color: colors.primary }]}>
+              Done
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ flex: 1 }} />
+        )}
+        <TouchableOpacity
+          style={[
+            styles.roundBtn,
+            { borderColor: colors.border, backgroundColor: colors.card2 },
+          ]}
+          onPress={onDelete}
+        >
+          <Text style={[styles.deleteText, { color: "#EF4444" }]}>×</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -117,23 +284,34 @@ export default function GoalsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const isFocused = useIsFocused();
+  const [tab, setTab] = useState<ScreenTab>("goals");
   const [loading, setLoading] = useState(false);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [summaries, setSummaries] = useState<Record<string, { totalDone: number; thisMonthDone: number }>>({});
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [summaries, setSummaries] = useState<
+    Record<string, { totalDone: number; thisMonthDone: number }>
+  >({});
 
   const loadGoals = useCallback(async () => {
     setLoading(true);
     const next = await syncGoalPeriods();
     setGoals(next);
     const summaryRows = await Promise.all(
-      next.map(async (goal) => ({ goalId: goal.id, summary: await getGoalProgressSummary(goal.id) })),
+      next.map(async (goal) => ({
+        goalId: goal.id,
+        summary: await getGoalProgressSummary(goal.id),
+      })),
     );
     setSummaries(
-      summaryRows.reduce<Record<string, { totalDone: number; thisMonthDone: number }>>((acc, row) => {
+      summaryRows.reduce<
+        Record<string, { totalDone: number; thisMonthDone: number }>
+      >((acc, row) => {
         acc[row.goalId] = row.summary;
         return acc;
       }, {}),
     );
+    const nextReminders = await getActiveReminders();
+    setReminders(sortReminders(nextReminders));
     setLoading(false);
   }, []);
 
@@ -143,58 +321,196 @@ export default function GoalsScreen() {
   }, [isFocused, loadGoals]);
 
   const hasGoals = useMemo(() => goals.length > 0, [goals]);
+  const hasReminders = useMemo(() => reminders.length > 0, [reminders]);
 
   const updateAndResync = useCallback(async () => {
     const latest = await getActiveGoals();
     setGoals(latest);
     const summaryRows = await Promise.all(
-      latest.map(async (goal) => ({ goalId: goal.id, summary: await getGoalProgressSummary(goal.id) })),
+      latest.map(async (goal) => ({
+        goalId: goal.id,
+        summary: await getGoalProgressSummary(goal.id),
+      })),
     );
     setSummaries(
-      summaryRows.reduce<Record<string, { totalDone: number; thisMonthDone: number }>>((acc, row) => {
+      summaryRows.reduce<
+        Record<string, { totalDone: number; thisMonthDone: number }>
+      >((acc, row) => {
         acc[row.goalId] = row.summary;
         return acc;
       }, {}),
     );
+    const nextReminders = await getActiveReminders();
+    setReminders(sortReminders(nextReminders));
     const hasPermission = await requestPermissions();
     if (hasPermission) {
       await syncGoalReminderSchedules(latest);
     }
   }, []);
 
+  const refreshReminders = useCallback(async () => {
+    const nextReminders = await getActiveReminders();
+    setReminders(sortReminders(nextReminders));
+    const hasPermission = await requestPermissions();
+    if (hasPermission) {
+      await resyncNotificationSchedules();
+    }
+  }, []);
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      edges={["top"]}
+    >
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadGoals} tintColor={colors.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={loadGoals}
+            tintColor={colors.primary}
+          />
+        }
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
           <View>
-            <Text style={[styles.heading, { color: colors.text }]}>Goals & Reminders</Text>
+            <Text style={[styles.heading, { color: colors.text }]}>
+              {tab === "goals" ? "Goals" : "Reminders"}
+            </Text>
             <Text style={[styles.subheading, { color: colors.muted }]}>
-              Build habits with daily, weekly, monthly targets
+              {tab === "goals"
+                ? "Build habits with daily, weekly, monthly targets"
+                : "One-time dates, monthly bills, or jobs like bike oil"}
             </Text>
           </View>
           <TouchableOpacity
             style={[styles.addTopBtn, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/add-goal')}
+            onPress={() =>
+              router.push(tab === "goals" ? "/add-goal" : "/add-reminder")
+            }
           >
             <Plus size={20} color={colors.primaryForeground} />
           </TouchableOpacity>
         </View>
 
-        {!hasGoals ? (
-          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No goals yet</Text>
+        <View
+          style={[
+            styles.tabRow,
+            { backgroundColor: colors.card2, borderColor: colors.border },
+          ]}
+        >
+          {(["goals", "reminders"] as ScreenTab[]).map((item) => {
+            const active = tab === item;
+            return (
+              <TouchableOpacity
+                key={item}
+                onPress={() => setTab(item)}
+                style={[
+                  styles.tabBtn,
+                  active && { backgroundColor: colors.primary },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: active ? colors.primaryForeground : colors.text,
+                    fontWeight: "800",
+                    fontSize: 13,
+                  }}
+                >
+                  {item === "goals" ? "Goals" : "Reminders"}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {tab === "reminders" ? (
+          !hasReminders ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                No reminders yet
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.muted }]}>
+                Set a one-time date, a monthly date, or something like bike oil
+                every 20 days.
+              </Text>
+              <TouchableOpacity
+                style={[styles.createBtn, { backgroundColor: colors.primary }]}
+                onPress={() => router.push("/add-reminder")}
+              >
+                <Text
+                  style={[
+                    styles.createBtnText,
+                    { color: colors.primaryForeground },
+                  ]}
+                >
+                  Create Reminder
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            reminders.map((reminder) => (
+              <ReminderCard
+                key={reminder.id}
+                reminder={reminder}
+                onEdit={() =>
+                  router.push({
+                    pathname: "/add-reminder",
+                    params: { reminderId: reminder.id },
+                  })
+                }
+                onDone={async () => {
+                  await markReminderDone(reminder.id);
+                  await refreshReminders();
+                }}
+                onDelete={() =>
+                  Alert.alert("Delete reminder?", `Remove "${reminder.title}"`, [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: async () => {
+                        await archiveReminder(reminder.id);
+                        await refreshReminders();
+                      },
+                    },
+                  ])
+                }
+              />
+            ))
+          )
+        ) : !hasGoals ? (
+          <View
+            style={[
+              styles.emptyCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              No goals yet
+            </Text>
             <Text style={[styles.emptyText, { color: colors.muted }]}>
-              Add your first goal like 8 glasses/day, namaz 5/day, petrol weekly.
+              Add your first goal like 8 glasses/day, namaz 5/day, petrol
+              weekly.
             </Text>
             <TouchableOpacity
               style={[styles.createBtn, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/add-goal')}
+              onPress={() => router.push("/add-goal")}
             >
-              <Text style={[styles.createBtnText, { color: colors.primaryForeground }]}>Create Goal</Text>
+              <Text
+                style={[
+                  styles.createBtnText,
+                  { color: colors.primaryForeground },
+                ]}
+              >
+                Create Goal
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -203,7 +519,9 @@ export default function GoalsScreen() {
               key={goal.id}
               goal={goal}
               totalDone={summaries[goal.id]?.totalDone ?? goal.completedCount}
-              thisMonthDone={summaries[goal.id]?.thisMonthDone ?? goal.completedCount}
+              thisMonthDone={
+                summaries[goal.id]?.thisMonthDone ?? goal.completedCount
+              }
               onIncrement={async () => {
                 await adjustGoalProgress(goal.id, 1);
                 await updateAndResync();
@@ -212,13 +530,18 @@ export default function GoalsScreen() {
                 await adjustGoalProgress(goal.id, -1);
                 await updateAndResync();
               }}
-              onEdit={() => router.push({ pathname: '/add-goal', params: { goalId: goal.id } })}
+              onEdit={() =>
+                router.push({
+                  pathname: "/add-goal",
+                  params: { goalId: goal.id },
+                })
+              }
               onDelete={() =>
-                Alert.alert('Delete goal?', `Remove "${goal.title}"`, [
-                  { text: 'Cancel', style: 'cancel' },
+                Alert.alert("Delete goal?", `Remove "${goal.title}"`, [
+                  { text: "Cancel", style: "cancel" },
                   {
-                    text: 'Delete',
-                    style: 'destructive',
+                    text: "Delete",
+                    style: "destructive",
                     onPress: async () => {
                       await archiveGoal(goal.id);
                       await updateAndResync();
@@ -237,57 +560,121 @@ export default function GoalsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 24, gap: 12 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  heading: { fontSize: 24, fontWeight: '800' },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  heading: { fontSize: 24, fontWeight: "800" },
   subheading: { fontSize: 13, marginTop: 4, maxWidth: 280 },
-  addTopBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 20, alignItems: 'center', marginTop: 24 },
-  emptyTitle: { fontSize: 20, fontWeight: '700' },
-  emptyText: { fontSize: 13, textAlign: 'center', marginTop: 8, lineHeight: 20 },
-  createBtn: { marginTop: 16, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 999 },
-  createBtnText: { fontSize: 14, fontWeight: '700' },
+  addTopBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabRow: {
+    flexDirection: "row",
+    borderRadius: 999,
+    borderWidth: 1,
+    padding: 4,
+  },
+  tabBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  reminderDue: {
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    flex: 1,
+  },
+  emptyCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: "center",
+    marginTop: 24,
+  },
+  emptyTitle: { fontSize: 20, fontWeight: "700" },
+  emptyText: {
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  createBtn: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  createBtnText: { fontSize: 14, fontWeight: "700" },
   goalCard: { borderWidth: 1, borderRadius: 22, padding: 16, gap: 12 },
-  goalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  goalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  goalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  goalTitleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   goalEmoji: { fontSize: 24 },
-  goalTitle: { fontSize: 17, fontWeight: '700' },
+  goalTitle: { fontSize: 17, fontWeight: "700" },
   goalMeta: { fontSize: 12, marginTop: 2 },
-  goalRemindFlag: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  progressTrack: { height: 10, borderRadius: 999, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 999 },
-  progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  progressText: { fontSize: 16, fontWeight: '800' },
+  goalRemindFlag: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  progressTrack: { height: 10, borderRadius: 999, overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: 999 },
+  progressRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  progressText: { fontSize: 16, fontWeight: "800" },
   progressSubText: { fontSize: 12 },
   statsCard: {
     borderWidth: 1,
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
-  statCol: { alignItems: 'center', flex: 1 },
-  statValue: { fontSize: 18, fontWeight: '800' },
+  statCol: { alignItems: "center", flex: 1 },
+  statValue: { fontSize: 18, fontWeight: "800" },
   statLabel: { fontSize: 11, marginTop: 2 },
-  actionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
   roundBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
     borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   doneBtn: {
     flex: 1,
     height: 48,
     borderRadius: 24,
     borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     gap: 6,
   },
-  doneBtnLabel: { fontSize: 15, fontWeight: '700' },
+  doneBtnLabel: { fontSize: 15, fontWeight: "700" },
   deleteText: { fontSize: 28, lineHeight: 28, marginTop: -3 },
 });

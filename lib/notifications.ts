@@ -1,7 +1,13 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import type { Goal, GoalReminderSlot } from './types';
+import type { Goal, GoalReminderSlot, Reminder } from './types';
 import { getActiveGoals } from './goals';
+import {
+  getActiveReminders,
+  getReminderScheduleDates,
+  ordinalDay,
+  parseReminderTime,
+} from './reminders';
 
 // Configure how notifications should be handled when the app is running
 Notifications.setNotificationHandler({
@@ -40,7 +46,7 @@ export async function requestPermissions() {
 }
 
 export async function scheduleDailyReminder() {
-  await syncGoalReminderSchedulesFromStorage();
+  await resyncNotificationSchedules();
 }
 
 export async function testNotification() {
@@ -60,10 +66,19 @@ export async function testNotification() {
 }
 
 function parseTime(value: string): { hour: number; minute: number } {
-  const [h, m] = value.split(':').map((part) => Number(part));
-  const hour = Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 9;
-  const minute = Number.isFinite(m) ? Math.min(59, Math.max(0, m)) : 0;
-  return { hour, minute };
+  return parseReminderTime(value);
+}
+
+function androidChannel() {
+  return Platform.OS === 'android' ? { channelId: 'reminders' } : {};
+}
+
+function dateTrigger(date: Date): Notifications.NotificationTriggerInput {
+  return {
+    type: Notifications.SchedulableTriggerInputTypes.DATE,
+    date,
+    ...androidChannel(),
+  };
 }
 
 function makeTitle(goal: Goal) {
@@ -82,7 +97,7 @@ function dailyTrigger(hour: number, minute: number): Notifications.NotificationT
     type: Notifications.SchedulableTriggerInputTypes.DAILY,
     hour,
     minute,
-    ...(Platform.OS === 'android' ? { channelId: 'reminders' } : {}),
+    ...androidChannel(),
   };
 }
 
@@ -101,7 +116,7 @@ function weeklyTrigger(
     weekday,
     hour,
     minute,
-    ...(Platform.OS === 'android' ? { channelId: 'reminders' } : {}),
+    ...androidChannel(),
   } as Notifications.NotificationTriggerInput;
 }
 
@@ -116,7 +131,7 @@ function monthlyTrigger(
     hour,
     minute,
     repeats: true,
-    ...(Platform.OS === 'android' ? { channelId: 'reminders' } : {}),
+    ...androidChannel(),
   } as Notifications.NotificationTriggerInput;
 }
 
@@ -146,7 +161,7 @@ async function scheduleGoalReminders(goal: Goal): Promise<void> {
           title: slotTitle(goal, slot),
           body: makeBody(goal),
           sound: true,
-          data: { goalId: goal.id, screen: '/(tabs)/goals', slotId: slot.id },
+          data: { kind: 'goal', goalId: goal.id, screen: '/(tabs)/goals', slotId: slot.id },
         },
         trigger,
       });
@@ -173,21 +188,76 @@ async function scheduleGoalReminders(goal: Goal): Promise<void> {
         title: makeTitle(goal),
         body: makeBody(goal),
         sound: true,
-        data: { goalId: goal.id, screen: '/(tabs)/goals' },
+        data: { kind: 'goal', goalId: goal.id, screen: '/(tabs)/goals' },
       },
       trigger,
     });
   }
 }
 
-export async function syncGoalReminderSchedules(goals: Goal[]) {
-  await Notifications.cancelAllScheduledNotificationsAsync();
-  for (const goal of goals) {
-    await scheduleGoalReminders(goal);
+function reminderBody(reminder: Reminder): string {
+  if (reminder.note?.trim()) return reminder.note.trim();
+  if (reminder.kind === 'monthly') {
+    return `Monthly reminder on the ${ordinalDay(reminder.monthDay ?? 1)}`;
+  }
+  if (reminder.kind === 'interval') {
+    const days = reminder.intervalDays ?? 1;
+    return `Every ${days} day${days === 1 ? '' : 's'}`;
+  }
+  return 'Scheduled reminder';
+}
+
+async function scheduleUserReminder(reminder: Reminder): Promise<void> {
+  if (!reminder.enabled || !reminder.isActive) return;
+
+  const body = reminderBody(reminder);
+  const content = {
+    title: reminder.title,
+    body,
+    sound: true as const,
+    data: { kind: 'reminder', reminderId: reminder.id, screen: '/(tabs)/goals' },
+  };
+
+  if (reminder.kind === 'monthly') {
+    const { hour, minute } = parseTime(reminder.time);
+    await Notifications.scheduleNotificationAsync({
+      content,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.MONTHLY,
+        day: Math.min(31, Math.max(1, reminder.monthDay ?? 1)),
+        hour,
+        minute,
+        ...androidChannel(),
+      },
+    });
+    return;
+  }
+
+  const dates = getReminderScheduleDates(reminder);
+  for (const date of dates) {
+    await Notifications.scheduleNotificationAsync({
+      content,
+      trigger: dateTrigger(date),
+    });
   }
 }
 
-export async function syncGoalReminderSchedulesFromStorage() {
+export async function resyncNotificationSchedules() {
+  await Notifications.cancelAllScheduledNotificationsAsync();
   const goals = await getActiveGoals();
-  await syncGoalReminderSchedules(goals);
+  for (const goal of goals) {
+    await scheduleGoalReminders(goal);
+  }
+  const reminders = await getActiveReminders();
+  for (const reminder of reminders) {
+    await scheduleUserReminder(reminder);
+  }
+}
+
+export async function syncGoalReminderSchedules(_goals?: Goal[]) {
+  await resyncNotificationSchedules();
+}
+
+export async function syncGoalReminderSchedulesFromStorage() {
+  await resyncNotificationSchedules();
 }
