@@ -1,9 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { parseISO } from 'date-fns';
 import { pushTransaction, patchTransaction, deleteTransactionRemote, syncProfile } from './sync';
-import { Category, Transaction, UserProfile, MonthData, getMonthKey, CURRENCY_SYMBOLS } from './types';
+import { Category, Transaction, UserProfile, MonthData, getMonthKey, CURRENCY_SYMBOLS, type PaidWith } from './types';
 
 export { Category, Transaction, UserProfile, MonthData, getMonthKey };
+export type { PaidWith };
+
+export const resolvePaidWith = (tx: Pick<Transaction, 'type' | 'paidWith'>): PaidWith => {
+  if (tx.type !== 'expense') return 'cash';
+  return tx.paidWith === 'online' ? 'online' : 'cash';
+};
 
 export function generateTransactionId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -216,10 +222,18 @@ export const deleteTransaction = async (tx: Transaction) => {
 
 export const getSummaries = (data: MonthData) => {
   const totalIncome = data.income.reduce((sum, t) => sum + t.amount, 0);
-  const totalExpenses = data.expenses.reduce((sum, t) => sum + t.amount, 0);
+  let cashExpenses = 0;
+  let onlineExpenses = 0;
+  for (const t of data.expenses) {
+    if (resolvePaidWith(t) === 'online') onlineExpenses += t.amount;
+    else cashExpenses += t.amount;
+  }
+  const totalExpenses = cashExpenses + onlineExpenses;
   return {
     totalIncome,
     totalExpenses,
+    cashExpenses,
+    onlineExpenses,
     balance: totalIncome - totalExpenses,
   };
 };

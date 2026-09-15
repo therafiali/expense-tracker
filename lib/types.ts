@@ -2,6 +2,9 @@ import { format } from 'date-fns';
 
 export type Category = string;
 
+/** How an expense was paid. Older records without this field count as cash. */
+export type PaidWith = 'cash' | 'online';
+
 export interface Transaction {
   id?: string;
   amount: number;
@@ -9,6 +12,8 @@ export interface Transaction {
   note?: string;
   category?: Category;
   type: 'income' | 'expense';
+  /** Only used for expenses. Missing values are treated as cash. */
+  paidWith?: PaidWith;
 }
 
 export interface UserProfile {

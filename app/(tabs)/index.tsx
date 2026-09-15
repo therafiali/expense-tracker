@@ -25,6 +25,7 @@ import {
   getMonthData,
   getSummaries,
   getUserProfile,
+  resolvePaidWith,
   type MonthData,
   type Transaction,
 } from '@/lib/storage';
@@ -77,7 +78,7 @@ export default function HomeScreen() {
     return () => sub.remove();
   }, [loadData]);
 
-  const { totalIncome, totalExpenses, balance } = getSummaries(data);
+  const { totalIncome, totalExpenses, cashExpenses, onlineExpenses, balance } = getSummaries(data);
 
   const allTransactions: Transaction[] = [
     ...data.income.map((t) => ({ ...t, type: 'income' as const })),
@@ -157,8 +158,26 @@ export default function HomeScreen() {
             <View style={styles.statItem}>
               <View style={[styles.statDot, { backgroundColor: colors.expense }]} />
               <View>
-                <Text style={[styles.statLabel, { color: colors.muted }]}>Expenses</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Total expenses</Text>
                 <Text style={[styles.statExpense, { color: colors.expense }]}>{totalExpenses.toFixed(0)}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
+            <View style={styles.statItem}>
+              <View style={[styles.statDot, { backgroundColor: '#F59E0B' }]} />
+              <View>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Cash</Text>
+                <Text style={[styles.statExpense, { color: colors.text }]}>{cashExpenses.toFixed(0)}</Text>
+              </View>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.statItem}>
+              <View style={[styles.statDot, { backgroundColor: '#0EA5E9' }]} />
+              <View>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Online</Text>
+                <Text style={[styles.statExpense, { color: colors.text }]}>{onlineExpenses.toFixed(0)}</Text>
               </View>
             </View>
           </View>
@@ -176,6 +195,7 @@ export default function HomeScreen() {
           <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {allTransactions.map((t, i) => {
               const isIncome = t.type === 'income';
+              const paidWith = !isIncome ? resolvePaidWith(t) : null;
               const Icon = isIncome
                 ? ArrowUpRight
                 : t.category
@@ -186,6 +206,10 @@ export default function HomeScreen() {
                 : t.category
                 ? colorForCategory(t.category)
                 : '#EF4444';
+              const noteText = t.note || format(new Date(t.date), 'MMM d, h:mm a');
+              const subtitle = paidWith
+                ? `${paidWith === 'online' ? 'Online' : 'Cash'} · ${noteText}`
+                : noteText;
 
               return (
                 <TouchableOpacity
@@ -211,7 +235,7 @@ export default function HomeScreen() {
                       {isIncome ? 'Income' : t.category}
                     </Text>
                     <Text style={[styles.txNote, { color: colors.muted }]} numberOfLines={1}>
-                      {t.note || format(new Date(t.date), 'MMM d, h:mm a')}
+                      {subtitle}
                     </Text>
                   </View>
                   <View style={styles.txRight}>

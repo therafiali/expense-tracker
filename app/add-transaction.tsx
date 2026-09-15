@@ -47,6 +47,8 @@ import {
   Tag,
   ChevronLeft,
   ChevronRight,
+  Banknote,
+  Smartphone,
 } from 'lucide-react-native';
 import {
   saveTransaction,
@@ -58,6 +60,7 @@ import {
   addCategory,
   type Category,
   type NoteSuggestion,
+  type PaidWith,
   type Transaction,
 } from '@/lib/storage';
 import { useTheme } from '@/lib/theme';
@@ -96,6 +99,7 @@ export default function AddTransactionScreen() {
   const isEditMode = !!(monthParam && idParam);
 
   const [type, setType] = useState<TxType>('expense');
+  const [paidWith, setPaidWith] = useState<PaidWith>('cash');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
@@ -137,6 +141,7 @@ export default function AddTransactionScreen() {
       }
       setOriginalTx(found);
       setType(found.type);
+      setPaidWith(found.paidWith === 'online' ? 'online' : 'cash');
       setSelectedCategory(found.category ?? null);
       setNote(found.note ?? '');
       setAmount(String(found.amount));
@@ -242,6 +247,8 @@ export default function AddTransactionScreen() {
           ? applyTimeFrom(originalTx.date, txDate).toISOString()
           : applyTimeFrom(new Date().toISOString(), txDate).toISOString();
 
+      const paidWithValue: PaidWith | undefined = type === 'expense' ? paidWith : undefined;
+
       if (isEditMode && originalTx) {
         await updateTransaction(originalTx, {
           ...originalTx,
@@ -250,6 +257,7 @@ export default function AddTransactionScreen() {
           note: note.trim() || undefined,
           category: type === 'expense' ? selectedCategory! : undefined,
           type,
+          paidWith: paidWithValue,
         });
       } else {
         await saveTransaction(parseISO(isoDate), {
@@ -258,6 +266,7 @@ export default function AddTransactionScreen() {
           note: note.trim() || undefined,
           category: type === 'expense' ? selectedCategory! : undefined,
           type,
+          paidWith: paidWithValue,
         });
       }
       router.replace('/(tabs)');
@@ -430,6 +439,56 @@ export default function AddTransactionScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
+              </View>
+            </View>
+          )}
+
+          {type === 'expense' && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, { color: colors.muted }]}>Paid with</Text>
+              <View style={[styles.toggleContainer, { backgroundColor: colors.card, marginBottom: 0 }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.toggleBtn,
+                    paidWith === 'cash' && { backgroundColor: colors.primaryMuted },
+                  ]}
+                  onPress={() => setPaidWith('cash')}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.paidWithInner}>
+                    <Banknote size={16} color={paidWith === 'cash' ? colors.heading : colors.muted} />
+                    <Text
+                      style={[
+                        styles.toggleText,
+                        { color: colors.muted },
+                        paidWith === 'cash' && { color: colors.heading, fontWeight: '800' },
+                      ]}
+                    >
+                      Cash
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.toggleBtn,
+                    paidWith === 'online' && { backgroundColor: colors.primaryMuted },
+                  ]}
+                  onPress={() => setPaidWith('online')}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.paidWithInner}>
+                    <Smartphone size={16} color={paidWith === 'online' ? colors.heading : colors.muted} />
+                    <Text
+                      style={[
+                        styles.toggleText,
+                        { color: colors.muted },
+                        paidWith === 'online' && { color: colors.heading, fontWeight: '800' },
+                      ]}
+                    >
+                      Online
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -740,6 +799,11 @@ const styles = StyleSheet.create({
   toggleText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  paidWithInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   // Section
   section: {

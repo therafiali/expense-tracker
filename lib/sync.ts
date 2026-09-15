@@ -44,7 +44,12 @@ function mergeMonthData(local: MonthData, cloud: MonthData): MonthData {
   }
 
   for (const t of [...cloud.income, ...cloud.expenses]) {
-    if (t.id) map.set(t.id, { ...t });
+    if (!t.id) continue;
+    const localTx = map.get(t.id);
+    map.set(t.id, {
+      ...t,
+      paidWith: t.paidWith ?? localTx?.paidWith,
+    });
   }
 
   const income = [...noId.filter((t) => t.type === 'income')];
@@ -197,6 +202,7 @@ export const syncCloudToLocal = async () => {
       cloudMonths[key] = { income: [], expenses: [] };
     }
 
+    const paidWithRaw = t.paid_with ?? t.paidWith;
     const transaction: Transaction = {
       id: String(t.id),
       amount: typeof t.amount === 'number' ? t.amount : Number(t.amount),
@@ -204,6 +210,7 @@ export const syncCloudToLocal = async () => {
       note: t.note != null ? String(t.note) : undefined,
       category: t.category != null ? String(t.category) : undefined,
       type: t.type as Transaction['type'],
+      paidWith: paidWithRaw === 'online' || paidWithRaw === 'cash' ? paidWithRaw : undefined,
     };
 
     if (transaction.type === 'income') {

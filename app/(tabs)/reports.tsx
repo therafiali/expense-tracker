@@ -20,6 +20,7 @@ import {
   getMonthData,
   getSummaries,
   getCurrencySymbol,
+  resolvePaidWith,
   type MonthData,
   type Transaction,
 } from '@/lib/storage';
@@ -267,57 +268,62 @@ export default function ReportsScreen() {
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
         ) : allTx.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.emptyText, { color: colors.muted }]}>No transactions for {format(currentDate, 'MMMM yyyy')}.</Text>
-          </View>
-        ) : (
-          <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {allTx.map((t, i) => {
-              const isIncome = t.type === 'income';
-              const Icon = isIncome
-                ? ArrowUpRight
-                : t.category
-                ? iconForCategory(t.category)
-                : ArrowDownLeft;
-              const color = isIncome
-                ? colors.income
-                : t.category
-                ? colorForCategory(t.category)
-                : '#EF4444';
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.emptyText, { color: colors.muted }]}>No transactions for {format(currentDate, 'MMMM yyyy')}.</Text>
+            </View>
+          ) : (
+            <View style={[styles.txList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {allTx.map((t, i) => {
+                const isIncome = t.type === 'income';
+                const paidWith = !isIncome ? resolvePaidWith(t) : null;
+                const Icon = isIncome
+                  ? ArrowUpRight
+                  : t.category
+                  ? iconForCategory(t.category)
+                  : ArrowDownLeft;
+                const color = isIncome
+                  ? colors.income
+                  : t.category
+                  ? colorForCategory(t.category)
+                  : '#EF4444';
+                const noteText = t.note || format(new Date(t.date), 'MMM d, h:mm a');
+                const subtitle = paidWith
+                  ? `${paidWith === 'online' ? 'Online' : 'Cash'} · ${noteText}`
+                  : noteText;
 
-              return (
-                <TouchableOpacity
-                  key={t.id || `${t.date}-${i}`}
-                  style={[styles.txRow, { borderBottomColor: colors.border2 }, i < allTx.length - 1 && styles.txRowBorder]}
-                  onPress={() => {
-                    if (!t.id) return;
-                    router.push({
-                      pathname: '/add-transaction',
-                      params: { m: format(parseISO(t.date), 'yyyy_MM'), id: t.id },
-                    });
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.txIcon, { backgroundColor: color + '18' }]}>
-                    <Icon size={18} color={color} />
-                  </View>
-                  <View style={styles.txMeta}>
-                    <Text style={[styles.txTitle, { color: colors.text }]}>{isIncome ? 'Income' : t.category}</Text>
-                    <Text style={[styles.txNote, { color: colors.muted }]} numberOfLines={1}>
-                      {t.note || format(new Date(t.date), 'MMM d, h:mm a')}
-                    </Text>
-                  </View>
-                  <View style={styles.txRight}>
-                    <Text style={[styles.txAmount, { color: isIncome ? colors.income : colors.expense }]}>
-                      {isIncome ? '+' : '-'}{t.amount.toFixed(2)}
-                    </Text>
-                    <Text style={[styles.txDate, { color: colors.placeholder }]}>{format(new Date(t.date), 'MMM d')}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+                return (
+                  <TouchableOpacity
+                    key={t.id || `${t.date}-${i}`}
+                    style={[styles.txRow, { borderBottomColor: colors.border2 }, i < allTx.length - 1 && styles.txRowBorder]}
+                    onPress={() => {
+                      if (!t.id) return;
+                      router.push({
+                        pathname: '/add-transaction',
+                        params: { m: format(parseISO(t.date), 'yyyy_MM'), id: t.id },
+                      });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.txIcon, { backgroundColor: color + '18' }]}>
+                      <Icon size={18} color={color} />
+                    </View>
+                    <View style={styles.txMeta}>
+                      <Text style={[styles.txTitle, { color: colors.text }]}>{isIncome ? 'Income' : t.category}</Text>
+                      <Text style={[styles.txNote, { color: colors.muted }]} numberOfLines={1}>
+                        {subtitle}
+                      </Text>
+                    </View>
+                    <View style={styles.txRight}>
+                      <Text style={[styles.txAmount, { color: isIncome ? colors.income : colors.expense }]}>
+                        {isIncome ? '+' : '-'}{t.amount.toFixed(2)}
+                      </Text>
+                      <Text style={[styles.txDate, { color: colors.placeholder }]}>{format(new Date(t.date), 'MMM d')}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
         <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 22 }]}>Goal Progress</Text>
         {loading ? (
