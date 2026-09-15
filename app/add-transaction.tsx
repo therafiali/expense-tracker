@@ -28,7 +28,10 @@ import {
   eachDayOfInterval,
   isSameMonth,
   isSameDay,
+  isToday,
+  isYesterday,
   addMonths,
+  subDays,
 } from 'date-fns';
 import {
   X,
@@ -206,6 +209,24 @@ export default function AddTransactionScreen() {
   const handleAmountChange = (val: string) => {
     setAmount(val);
   };
+
+  const applyCalendarDay = (day: Date) => {
+    const timeSource =
+      isEditMode && originalTx ? originalTx.date : new Date().toISOString();
+    setTxDate(applyTimeFrom(timeSource, day));
+    setCalendarMonth(startOfMonth(day));
+  };
+
+  const openDatePicker = () => {
+    setCalendarMonth(startOfMonth(txDate));
+    setShowDatePicker(true);
+  };
+
+  const todayDate = new Date();
+  const yesterdayDate = subDays(todayDate, 1);
+  const txIsToday = isToday(txDate);
+  const txIsYesterday = isYesterday(txDate);
+  const txIsCustomDate = !txIsToday && !txIsYesterday;
 
   const handleSave = async () => {
     if (saving) return;
@@ -488,14 +509,70 @@ export default function AddTransactionScreen() {
             <Text style={[styles.sectionLabel, { color: colors.muted }]}>Date</Text>
             <TouchableOpacity
               style={[styles.noteInput, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => {
-                setCalendarMonth(startOfMonth(txDate));
-                setShowDatePicker(true);
-              }}
+              onPress={openDatePicker}
               activeOpacity={0.75}
             >
               <Text style={{ color: colors.text, fontSize: 15 }}>{format(txDate, 'EEEE, MMM d, yyyy')}</Text>
             </TouchableOpacity>
+            <View style={styles.dateQuickRow}>
+              <TouchableOpacity
+                style={[
+                  styles.dateQuickChip,
+                  { backgroundColor: colors.card2, borderColor: colors.border },
+                  txIsCustomDate && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+                ]}
+                onPress={openDatePicker}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.dateQuickChipText,
+                    { color: colors.subtext },
+                    txIsCustomDate && { color: colors.heading, fontWeight: '800' },
+                  ]}
+                >
+                  {format(txDate, 'd - MMM')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.dateQuickChip,
+                  { backgroundColor: colors.card2, borderColor: colors.border },
+                  txIsToday && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+                ]}
+                onPress={() => applyCalendarDay(todayDate)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.dateQuickChipText,
+                    { color: colors.subtext },
+                    txIsToday && { color: colors.heading, fontWeight: '800' },
+                  ]}
+                >
+                  Today
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.dateQuickChip,
+                  { backgroundColor: colors.card2, borderColor: colors.border },
+                  txIsYesterday && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+                ]}
+                onPress={() => applyCalendarDay(yesterdayDate)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.dateQuickChipText,
+                    { color: colors.subtext },
+                    txIsYesterday && { color: colors.heading, fontWeight: '800' },
+                  ]}
+                >
+                  Yesterday
+                </Text>
+              </TouchableOpacity>
+            </View>
             <Modal visible={showDatePicker} transparent animationType="fade">
               <View style={styles.dateModalOverlay}>
                 <TouchableOpacity
@@ -536,8 +613,6 @@ export default function AddTransactionScreen() {
                       for (let i = 0; i < days.length; i += 7) {
                         rows.push(days.slice(i, i + 7));
                       }
-                      const timeSource =
-                        isEditMode && originalTx ? originalTx.date : new Date().toISOString();
                       return rows.map((week, wi) => (
                         <View key={wi} style={styles.calendarWeek}>
                           {week.map((day, di) => {
@@ -552,7 +627,7 @@ export default function AddTransactionScreen() {
                                   selected && { backgroundColor: colors.primaryMuted },
                                 ]}
                                 onPress={() => {
-                                  setTxDate(applyTimeFrom(timeSource, day));
+                                  applyCalendarDay(day);
                                   setShowDatePicker(false);
                                 }}
                               >
@@ -771,6 +846,22 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  dateQuickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  dateQuickChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  dateQuickChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Amount
   amountRow: {
