@@ -1,12 +1,34 @@
 import { supabase } from './supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
-import { getMonthKey, Goal, GoalProgressEntry, MonthData, Transaction, UserProfile } from './types';
+import { getMonthKey, Goal, GoalProgressEntry, MonthData, Reminder, Transaction, UserProfile } from './types';
 import { parseISO } from 'date-fns';
 import { DeviceEventEmitter } from 'react-native';
+import { ensureValidTransactionId, isValidUuid } from './ids';
+import { formatSupabaseError, showOfflineSyncWarning, showToast } from './toast';
+
+type SyncIssue = { area: string; message: string };
+
+function collectSyncError(issues: SyncIssue[], area: string, error: { message?: string } | null | undefined) {
+  if (!error?.message) return;
+  console.error(`[sync] ${area}:`, error);
+  issues.push({ area, message: error.message });
+}
+
+function reportSyncIssues(issues: SyncIssue[]) {
+  if (issues.length === 0) return;
+  const first = issues[0];
+  const message =
+    issues.length === 1
+      ? `${first.area}: ${first.message}`
+      : `Cloud sync failed (${issues.length} issues). ${first.message}`;
+  showToast(message, 'error');
+}
 
 /** Fired after cloud data is merged into AsyncStorage so list screens can reload. */
 export const TRANSACTIONS_SYNCED_EVENT = 'aco_transactions_synced';
+/** Fired after a full Sync Now job finishes (transactions + goals). */
+export const DATA_SYNCED_EVENT = 'aco_data_synced';
 
 function emitTransactionsSynced() {
   DeviceEventEmitter.emit(TRANSACTIONS_SYNCED_EVENT);
@@ -32,6 +54,7 @@ async function getSessionWithBriefRetry(): Promise<Session | null> {
 const UPSERT_CHUNK_SIZE = 80;
 const GOALS_STORAGE_KEY = 'goals_v1';
 const GOAL_PROGRESS_STORAGE_KEY = 'goal_progress_v1';
+const REMINDERS_STORAGE_KEY = 'reminders_v1';
 
 /** Merge cloud month into local: keyed txs use cloud copy when present; id-less local txs kept. */
 function mergeMonthData(local: MonthData, cloud: MonthData): MonthData {
@@ -112,10 +135,53 @@ function rowFromGoalProgress(userId: string, progress: GoalProgressEntry) {
   };
 }
 
+function rowFromReminder(userId: string, reminder: Reminder) {
+  return {
+    id: reminder.id,
+    user_id: userId,
+    title: reminder.title,
+    note: reminder.note ?? null,
+    kind: reminder.kind,
+    reminder_time: reminder.time,
+    fire_at: reminder.fireAt ?? null,
+    month_day: reminder.monthDay ?? null,
+    interval_days: reminder.intervalDays ?? null,
+    interval_start_at: reminder.intervalStartAt ?? null,
+    last_completed_at: reminder.lastCompletedAt ?? null,
+    enabled: reminder.enabled,
+    is_active: reminder.isActive,
+    created_at: reminder.createdAt,
+    updated_at: reminder.updatedAt,
+  };
+}
+
+function reminderFromRow(row: Record<string, unknown>): Reminder {
+  const kindRaw = String(row.kind ?? 'once');
+  const kind: Reminder['kind'] =
+    kindRaw === 'monthly' || kindRaw === 'interval' ? kindRaw : 'once';
+  return {
+    id: String(row.id),
+    title: String(row.title ?? ''),
+    note: row.note != null ? String(row.note) : undefined,
+    kind,
+    time: String(row.reminder_time ?? row.time ?? '09:00'),
+    fireAt: row.fire_at != null ? String(row.fire_at) : undefined,
+    monthDay: row.month_day != null ? Number(row.month_day) : undefined,
+    intervalDays: row.interval_days != null ? Number(row.interval_days) : undefined,
+    intervalStartAt: row.interval_start_at != null ? String(row.interval_start_at) : undefined,
+    lastCompletedAt: row.last_completed_at != null ? String(row.last_completed_at) : undefined,
+    enabled: Boolean(row.enabled),
+    isActive: Boolean(row.is_active),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    updatedAt: String(row.updated_at ?? new Date().toISOString()),
+  };
+}
+
 /**
  * Push all local month files to Supabase (upsert by transaction id).
+ * Rewrites legacy non-UUID ids (e.g. "4hv2n") before upload.
  */
-export const syncLocalToCloud = async () => {
+export const syncLocalToCloud = async (issues: SyncIssue[] = []) => {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -130,9 +196,24 @@ export const syncLocalToCloud = async () => {
     if (!localData) continue;
 
     const parsed: MonthData = JSON.parse(localData);
-    const allTransactions = [...parsed.income, ...parsed.expenses];
+    let changed = false;
+    const income = parsed.income.map((t) => {
+      const next = ensureValidTransactionId(t);
+      if (next.id !== t.id) changed = true;
+      return next;
+    });
+    const expenses = parsed.expenses.map((t) => {
+      const next = ensureValidTransactionId(t);
+      if (next.id !== t.id) changed = true;
+      return next;
+    });
+    if (changed) {
+      await AsyncStorage.setItem(key, JSON.stringify({ income, expenses }));
+    }
+
+    const allTransactions = [...income, ...expenses];
     const rows = allTransactions
-      .filter((t): t is Transaction & { id: string } => Boolean(t.id))
+      .filter((t): t is Transaction & { id: string } => isValidUuid(t.id))
       .map((t) => rowFromTransaction(userId, t));
 
     for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
@@ -141,12 +222,12 @@ export const syncLocalToCloud = async () => {
 
       const { error } = await supabase.from('transactions').upsert(chunk, { onConflict: 'id' });
 
-      if (error) console.error('Error syncing to cloud:', error);
+      if (error) collectSyncError(issues, 'Upload transactions', error);
     }
   }
 };
 
-export const syncGoalsLocalToCloud = async () => {
+export const syncGoalsLocalToCloud = async (issues: SyncIssue[] = []) => {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -159,7 +240,7 @@ export const syncGoalsLocalToCloud = async () => {
     const chunk = goalRows.slice(i, i + UPSERT_CHUNK_SIZE);
     if (chunk.length === 0) continue;
     const { error } = await supabase.from('goals').upsert(chunk, { onConflict: 'id' });
-    if (error) console.error('Error syncing goals to cloud:', error);
+    if (error) collectSyncError(issues, 'Upload goals', error);
   }
 
   const rawProgress = await AsyncStorage.getItem(GOAL_PROGRESS_STORAGE_KEY);
@@ -169,14 +250,14 @@ export const syncGoalsLocalToCloud = async () => {
     const chunk = progressRows.slice(i, i + UPSERT_CHUNK_SIZE);
     if (chunk.length === 0) continue;
     const { error } = await supabase.from('goal_progress').upsert(chunk, { onConflict: 'id' });
-    if (error) console.error('Error syncing goal progress to cloud:', error);
+    if (error) collectSyncError(issues, 'Upload goal progress', error);
   }
 };
 
 /**
  * Fetch remote transactions and merge into local month buckets (does not delete unknown keys).
  */
-export const syncCloudToLocal = async () => {
+export const syncCloudToLocal = async (issues: SyncIssue[] = []) => {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -188,7 +269,7 @@ export const syncCloudToLocal = async () => {
     .order('date', { ascending: false });
 
   if (error || !transactions) {
-    console.error('Error fetching from cloud:', error);
+    collectSyncError(issues, 'Download transactions', error);
     return;
   }
 
@@ -230,7 +311,7 @@ export const syncCloudToLocal = async () => {
   emitTransactionsSynced();
 };
 
-export const syncGoalsCloudToLocal = async () => {
+export const syncGoalsCloudToLocal = async (issues: SyncIssue[] = []) => {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -241,7 +322,7 @@ export const syncGoalsCloudToLocal = async () => {
     .select('*')
     .order('updated_at', { ascending: false });
   if (goalsError) {
-    console.error('Error fetching goals from cloud:', goalsError);
+    collectSyncError(issues, 'Download goals', goalsError);
     return;
   }
   if (goals) {
@@ -271,7 +352,7 @@ export const syncGoalsCloudToLocal = async () => {
     .select('*')
     .order('updated_at', { ascending: false });
   if (progressError) {
-    console.error('Error fetching goal progress from cloud:', progressError);
+    collectSyncError(issues, 'Download goal progress', progressError);
     return;
   }
   if (progressRows) {
@@ -286,18 +367,64 @@ export const syncGoalsCloudToLocal = async () => {
   }
 };
 
-/** Single-transaction upsert (insert or replace by id). */
-export const pushTransaction = async (transaction: Transaction) => {
-  if (!transaction.id) return;
-
-  const session = await getSessionWithBriefRetry();
+export const syncRemindersLocalToCloud = async (issues: SyncIssue[] = []) => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) return;
 
-  const row = rowFromTransaction(session.user.id, transaction as Transaction & { id: string });
+  const rawReminders = await AsyncStorage.getItem(REMINDERS_STORAGE_KEY);
+  const reminders: Reminder[] = rawReminders ? JSON.parse(rawReminders) : [];
+  const rows = reminders.map((reminder) => rowFromReminder(session.user.id, reminder));
+  for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE);
+    if (chunk.length === 0) continue;
+    const { error } = await supabase.from('reminders').upsert(chunk, { onConflict: 'id' });
+    if (error) collectSyncError(issues, 'Upload reminders', error);
+  }
+};
+
+export const syncRemindersCloudToLocal = async (issues: SyncIssue[] = []) => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const { data: reminders, error } = await supabase
+    .from('reminders')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  if (error) {
+    collectSyncError(issues, 'Download reminders', error);
+    return;
+  }
+  if (reminders) {
+    const mapped = reminders.map((row: Record<string, unknown>) => reminderFromRow(row));
+    await AsyncStorage.setItem(REMINDERS_STORAGE_KEY, JSON.stringify(mapped));
+  }
+};
+
+/** Single-transaction upsert (insert or replace by id). */
+export const pushTransaction = async (transaction: Transaction): Promise<boolean> => {
+  const tx = ensureValidTransactionId(transaction);
+  if (!tx.id) return false;
+
+  const session = await getSessionWithBriefRetry();
+  if (!session) {
+    showOfflineSyncWarning();
+    return false;
+  }
+
+  const row = rowFromTransaction(session.user.id, tx as Transaction & { id: string });
 
   const { error } = await supabase.from('transactions').upsert(row, { onConflict: 'id' });
 
-  if (error) console.error('Error pushing transaction:', error);
+  if (error) {
+    console.error('Error pushing transaction:', error);
+    showToast(`Could not save to cloud: ${formatSupabaseError(error)}`, 'error');
+    return false;
+  }
+  return true;
 };
 
 /** Edits use the same upsert path so a missed insert still creates the row. */
@@ -311,7 +438,10 @@ export const deleteTransactionRemote = async (id: string) => {
 
   const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', session.user.id);
 
-  if (error) console.error('Error deleting transaction:', error);
+  if (error) {
+    console.error('Error deleting transaction:', error);
+    showToast(`Could not delete from cloud: ${formatSupabaseError(error)}`, 'error');
+  }
 };
 
 export const syncProfile = async (profile: UserProfile) => {
@@ -327,7 +457,10 @@ export const syncProfile = async (profile: UserProfile) => {
     updated_at: new Date().toISOString(),
   });
 
-  if (error) console.error('Error syncing profile:', error);
+  if (error) {
+    console.error('Error syncing profile:', error);
+    showToast(`Could not sync profile: ${formatSupabaseError(error)}`, 'error');
+  }
 };
 
 export const pushGoal = async (goal: Goal) => {
@@ -335,7 +468,10 @@ export const pushGoal = async (goal: Goal) => {
   if (!session) return;
   const row = rowFromGoal(session.user.id, goal);
   const { error } = await supabase.from('goals').upsert(row, { onConflict: 'id' });
-  if (error) console.error('Error pushing goal:', error);
+  if (error) {
+    console.error('Error pushing goal:', error);
+    showToast(`Could not save goal to cloud: ${formatSupabaseError(error)}`, 'error');
+  }
 };
 
 export const pushGoalProgress = async (entry: GoalProgressEntry) => {
@@ -343,15 +479,89 @@ export const pushGoalProgress = async (entry: GoalProgressEntry) => {
   if (!session) return;
   const row = rowFromGoalProgress(session.user.id, entry);
   const { error } = await supabase.from('goal_progress').upsert(row, { onConflict: 'id' });
-  if (error) console.error('Error pushing goal progress:', error);
+  if (error) {
+    console.error('Error pushing goal progress:', error);
+    showToast(`Could not save goal progress: ${formatSupabaseError(error)}`, 'error');
+  }
+};
+
+export const pushReminder = async (reminder: Reminder) => {
+  const session = await getSessionWithBriefRetry();
+  if (!session) return;
+  const row = rowFromReminder(session.user.id, reminder);
+  const { error } = await supabase.from('reminders').upsert(row, { onConflict: 'id' });
+  if (error) {
+    console.error('Error pushing reminder:', error);
+    showToast(`Could not save reminder to cloud: ${formatSupabaseError(error)}`, 'error');
+  }
 };
 
 /**
  * Push local changes, then pull remote and merge into AsyncStorage.
  */
-export const syncAll = async () => {
-  await syncLocalToCloud();
-  await syncGoalsLocalToCloud();
-  await syncCloudToLocal();
-  await syncGoalsCloudToLocal();
+export const syncAll = async (): Promise<boolean> => {
+  const session = await getSessionWithBriefRetry();
+  if (!session) return true;
+
+  const issues: SyncIssue[] = [];
+  try {
+    await syncLocalToCloud(issues);
+    await syncGoalsLocalToCloud(issues);
+    await syncRemindersLocalToCloud(issues);
+    await syncCloudToLocal(issues);
+    await syncGoalsCloudToLocal(issues);
+    await syncRemindersCloudToLocal(issues);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    collectSyncError(issues, 'Sync', { message });
+  }
+
+  if (issues.length > 0) {
+    reportSyncIssues(issues);
+    return false;
+  }
+
+  DeviceEventEmitter.emit(DATA_SYNCED_EVENT);
+  return true;
 };
+
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let syncInFlight = false;
+let syncQueued = false;
+const SYNC_DEBOUNCE_MS = 900;
+
+async function runSyncNow() {
+  if (syncInFlight) {
+    syncQueued = true;
+    return;
+  }
+  syncInFlight = true;
+  try {
+    await syncAll();
+  } catch (err) {
+    console.error('Auto sync failed:', err);
+    showToast(err instanceof Error ? err.message : 'Auto sync failed', 'error');
+  } finally {
+    syncInFlight = false;
+    if (syncQueued) {
+      syncQueued = false;
+      void runSyncNow();
+    }
+  }
+}
+
+/**
+ * Queue the same job as Profile → Sync Now.
+ * Rapid calls coalesce; overlapping runs queue one follow-up.
+ */
+export function requestSyncNow(options?: { immediate?: boolean }) {
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+  const delay = options?.immediate ? 0 : SYNC_DEBOUNCE_MS;
+  syncTimer = setTimeout(() => {
+    syncTimer = null;
+    void runSyncNow();
+  }, delay);
+}

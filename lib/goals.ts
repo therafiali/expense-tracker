@@ -1,14 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { endOfDay, endOfMonth, endOfWeek } from 'date-fns';
 import { Goal, GoalPeriod, GoalReminderSlot, GoalProgressEntry } from './types';
-import { pushGoal, pushGoalProgress, syncGoalsLocalToCloud } from './sync';
+import { pushGoal, pushGoalProgress, requestSyncNow } from './sync';
 
 const GOALS_STORAGE_KEY = 'goals_v1';
 const GOAL_PROGRESS_STORAGE_KEY = 'goal_progress_v1';
-
-function triggerGoalSync(reason: string) {
-  syncGoalsLocalToCloud().catch((err) => console.error(`[goal-sync] ${reason} failed:`, err));
-}
 
 function generateGoalId(): string {
   return 'goal-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -89,6 +85,7 @@ export async function syncGoalPeriods(): Promise<Goal[]> {
 
   if (changed) {
     await saveGoals(updated);
+    requestSyncNow();
   }
 
   return updated;
@@ -128,7 +125,7 @@ export async function upsertGoal(input: UpsertGoalInput): Promise<Goal> {
       goals[idx] = next;
       await saveGoals(goals);
       pushGoal(next).catch((err) => console.error('Goal sync failed:', err));
-      triggerGoalSync('upsert existing goal');
+      requestSyncNow();
       return next;
     }
   }
@@ -152,7 +149,7 @@ export async function upsertGoal(input: UpsertGoalInput): Promise<Goal> {
 
   await saveGoals([goal, ...goals]);
   pushGoal(goal).catch((err) => console.error('Goal sync failed:', err));
-  triggerGoalSync('create goal');
+  requestSyncNow();
   return goal;
 }
 
@@ -201,7 +198,7 @@ export async function adjustGoalProgress(goalId: string, delta: number): Promise
     }
   }
 
-  triggerGoalSync('adjust goal progress');
+  requestSyncNow();
 
   return updated;
 }
@@ -217,7 +214,7 @@ export async function archiveGoal(goalId: string): Promise<void> {
   if (archived) {
     pushGoal(archived).catch((err) => console.error('Goal archive sync failed:', err));
   }
-  triggerGoalSync('archive goal');
+  requestSyncNow();
 }
 
 export async function getGoalById(goalId: string): Promise<Goal | null> {

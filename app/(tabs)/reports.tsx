@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Platform,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, subMonths, parseISO } from 'date-fns';
@@ -28,6 +29,7 @@ import { getActiveGoals, getGoalProgress } from '@/lib/goals';
 import { iconForCategory, colorForCategory } from '@/components/category-icon';
 
 import { useTheme } from '@/lib/theme';
+import { DATA_SYNCED_EVENT } from '@/lib/sync';
 import { useScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
 
 export default function ReportsScreen() {
@@ -45,6 +47,14 @@ export default function ReportsScreen() {
 
   useEffect(() => {
     if (isFocused) loadData();
+  }, [isFocused, currentDate]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(DATA_SYNCED_EVENT, () => {
+      if (!isFocused) return;
+      void loadData();
+    });
+    return () => sub.remove();
   }, [isFocused, currentDate]);
 
   const loadData = async () => {
@@ -199,14 +209,7 @@ export default function ReportsScreen() {
               disabled={exporting || allTx.length === 0}
               activeOpacity={0.8}
             >
-              {exporting ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <>
-                  <Download size={15} color={colors.heading} />
-                  <Text style={[styles.exportText, { color: colors.heading }]}>Expense PDF</Text>
-                </>
-              )}
+              <Text style={[styles.exportText, { color: colors.heading }]}>Expense PDF</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[

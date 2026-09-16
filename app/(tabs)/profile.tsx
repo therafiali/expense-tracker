@@ -111,10 +111,12 @@ export default function ProfileScreen() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await syncAll();
-      Alert.alert('Synced', 'Cloud sync completed.');
+      const ok = await syncAll();
+      if (ok) {
+        Alert.alert('Synced', 'Cloud sync completed.');
+      }
     } catch {
-      Alert.alert('Error', 'Sync failed. Check your connection.');
+      // syncAll / runSyncNow also surface errors via toast
     } finally {
       setSyncing(false);
     }

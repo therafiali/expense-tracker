@@ -10,6 +10,7 @@ import {
   setMilliseconds,
 } from 'date-fns';
 import type { Reminder, ReminderKind } from './types';
+import { pushReminder, requestSyncNow } from './sync';
 
 const REMINDERS_STORAGE_KEY = 'reminders_v1';
 const INTERVAL_SCHEDULE_COUNT = 6;
@@ -254,6 +255,8 @@ export async function upsertReminder(input: UpsertReminderInput): Promise<Remind
       };
       reminders[idx] = next;
       await saveReminders(reminders);
+      pushReminder(next).catch((err) => console.error('Reminder sync failed:', err));
+      requestSyncNow();
       return next;
     }
   }
@@ -275,6 +278,8 @@ export async function upsertReminder(input: UpsertReminderInput): Promise<Remind
   };
 
   await saveReminders([reminder, ...reminders]);
+  pushReminder(reminder).catch((err) => console.error('Reminder sync failed:', err));
+  requestSyncNow();
   return reminder;
 }
 
@@ -295,6 +300,8 @@ export async function markReminderDone(id: string): Promise<Reminder | null> {
   };
   reminders[idx] = next;
   await saveReminders(reminders);
+  pushReminder(next).catch((err) => console.error('Reminder sync failed:', err));
+  requestSyncNow();
   return next;
 }
 
@@ -305,4 +312,9 @@ export async function archiveReminder(id: string): Promise<void> {
     reminder.id === id ? { ...reminder, isActive: false, updatedAt: nowIso } : reminder,
   );
   await saveReminders(updated);
+  const archived = updated.find((reminder) => reminder.id === id);
+  if (archived) {
+    pushReminder(archived).catch((err) => console.error('Reminder archive sync failed:', err));
+  }
+  requestSyncNow();
 }

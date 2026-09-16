@@ -1,7 +1,8 @@
-import { requestPermissions, scheduleDailyReminder } from "@/lib/notifications";
+import { ToastHost } from "@/components/toast-host";
+import { requestPermissions, resyncNotificationSchedules, scheduleDailyReminder } from "@/lib/notifications";
 import { getUserProfile } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
-import { syncAll } from "@/lib/sync";
+import { DATA_SYNCED_EVENT, requestSyncNow } from "@/lib/sync";
 import { ThemeProvider, useTheme } from "@/lib/theme";
 import {
   DarkTheme,
@@ -14,10 +15,11 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, View } from "react-native";
+import { Alert, AppState, DeviceEventEmitter } from "react-native";
 import "../global.css";
 
 void SplashScreen.preventAutoHideAsync();
+SplashScreen.setOptions({ duration: 400, fade: true });
 
 function RootLayoutContent() {
   const router = useRouter();
@@ -59,14 +61,33 @@ function RootLayoutContent() {
   }, [segments]);
 
   useEffect(() => {
+    requestSyncNow({ immediate: true });
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session) return;
       if (event !== "INITIAL_SESSION" && event !== "SIGNED_IN") return;
-      void syncAll();
+      requestSyncNow({ immediate: true });
     });
-    return () => subscription.unsubscribe();
+
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        requestSyncNow({ immediate: true });
+      }
+    });
+
+    const dataSyncedSub = DeviceEventEmitter.addListener(DATA_SYNCED_EVENT, () => {
+      void resyncNotificationSchedules().catch((e) => {
+        console.warn("[sync] reschedule notifications failed:", e);
+      });
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      appStateSub.remove();
+      dataSyncedSub.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -100,6 +121,11 @@ function RootLayoutContent() {
     }
 
     checkForAppUpdate();
+  }, [isReady]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    void SplashScreen.hideAsync();
   }, [isReady]);
 
   if (!isReady) return null;
@@ -154,6 +180,7 @@ function RootLayoutContent() {
         />
       </Stack>
       <StatusBar style={isDark ? "light" : "dark"} />
+      <ToastHost />
     </NavigationThemeProvider>
   );
 }
@@ -171,30 +198,13 @@ export default function RootLayout() {
   const fontsResolved = fontsLoaded || fontError != null;
 
   useEffect(() => {
-    if (fontsResolved) {
-      void SplashScreen.hideAsync();
-    }
-  }, [fontsResolved]);
-
-  useEffect(() => {
     if (fontError) {
       console.warn("[fonts] Inter failed to load, using system fonts:", fontError);
     }
   }, [fontError]);
 
   if (!fontsResolved) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: "#EFF9FD",
-        }}
-      >
-        <ActivityIndicator size="large" color="#2A6174" />
-      </View>
-    );
+    return null;
   }
 
   return (

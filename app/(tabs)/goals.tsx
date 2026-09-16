@@ -21,12 +21,14 @@ import {
 } from "@/lib/reminders";
 import { useTheme } from "@/lib/theme";
 import { Goal, Reminder } from "@/lib/types";
+import { DATA_SYNCED_EVENT } from "@/lib/sync";
 import { useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { Bell, BellOff, Check, Minus, Plus } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  DeviceEventEmitter,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -318,6 +320,14 @@ export default function GoalsScreen() {
   useEffect(() => {
     if (!isFocused) return;
     void loadGoals();
+  }, [isFocused, loadGoals]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(DATA_SYNCED_EVENT, () => {
+      if (!isFocused) return;
+      void loadGoals();
+    });
+    return () => sub.remove();
   }, [isFocused, loadGoals]);
 
   const hasGoals = useMemo(() => goals.length > 0, [goals]);

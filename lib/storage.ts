@@ -1,23 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { parseISO } from 'date-fns';
-import { pushTransaction, patchTransaction, deleteTransactionRemote, syncProfile } from './sync';
+import { pushTransaction, patchTransaction, deleteTransactionRemote, syncProfile, requestSyncNow } from './sync';
+import { ensureValidTransactionId, isValidUuid } from './ids';
 import { Category, Transaction, UserProfile, MonthData, getMonthKey, CURRENCY_SYMBOLS, type PaidWith } from './types';
 
 export { Category, Transaction, UserProfile, MonthData, getMonthKey };
 export type { PaidWith };
+export { generateTransactionId, isValidUuid, ensureValidTransactionId } from './ids';
 
 export const resolvePaidWith = (tx: Pick<Transaction, 'type' | 'paidWith'>): PaidWith => {
   if (tx.type !== 'expense') return 'cash';
   return tx.paidWith === 'online' ? 'online' : 'cash';
 };
-
-export function generateTransactionId(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
 
 function transactionsMatch(a: Transaction, b: Transaction): boolean {
   if (a.id && b.id) return a.id === b.id;
@@ -46,11 +40,9 @@ export const getMonthData = async (date: Date): Promise<MonthData> => {
       let changed = false;
       const ensureIds = (arr: Transaction[]) =>
         arr.map((t) => {
-          if (!t.id) {
-            changed = true;
-            return { ...t, id: generateTransactionId() };
-          }
-          return t;
+          if (isValidUuid(t.id)) return t;
+          changed = true;
+          return ensureValidTransactionId(t);
         });
       const fixed: MonthData = {
         income: ensureIds(parsed.income),
@@ -105,6 +97,7 @@ export const addCategory = async (label: string) => {
     };
     
     await AsyncStorage.setItem('custom_categories', JSON.stringify([...custom, newCat]));
+    requestSyncNow();
     return newCat;
   } catch (error) {
     console.error('Error adding category:', error);
@@ -156,10 +149,7 @@ export const saveRecentNote = async (note: string, amount: number, category?: st
 export const saveTransaction = async (date: Date, transaction: Transaction) => {
   const key = getMonthKey(date);
   const data = await getMonthData(date);
-  const tx: Transaction = {
-    ...transaction,
-    id: transaction.id ?? generateTransactionId(),
-  };
+  const tx: Transaction = ensureValidTransactionId(transaction);
 
   if (tx.type === 'income') {
     data.income.unshift(tx);
@@ -174,6 +164,7 @@ export const saveTransaction = async (date: Date, transaction: Transaction) => {
   }
 
   pushTransaction(tx).catch(err => console.error('Background sync failed:', err));
+  requestSyncNow();
 };
 
 export const updateTransaction = async (previous: Transaction, next: Transaction) => {
@@ -185,28 +176,31 @@ export const updateTransaction = async (previous: Transaction, next: Transaction
   const withoutPrev = removeTransaction(await getMonthData(oldMonth), previous);
   await AsyncStorage.setItem(oldKey, JSON.stringify(withoutPrev));
 
+  const nextTx = ensureValidTransactionId(next);
+
   if (oldKey === newKey) {
     const merged =
-      next.type === 'income'
-        ? { ...withoutPrev, income: [next, ...withoutPrev.income] }
-        : { ...withoutPrev, expenses: [next, ...withoutPrev.expenses] };
+      nextTx.type === 'income'
+        ? { ...withoutPrev, income: [nextTx, ...withoutPrev.income] }
+        : { ...withoutPrev, expenses: [nextTx, ...withoutPrev.expenses] };
     await AsyncStorage.setItem(oldKey, JSON.stringify(merged));
   } else {
     const target = await getMonthData(newMonth);
     const merged =
-      next.type === 'income'
-        ? { ...target, income: [next, ...target.income] }
-        : { ...target, expenses: [next, ...target.expenses] };
+      nextTx.type === 'income'
+        ? { ...target, income: [nextTx, ...target.income] }
+        : { ...target, expenses: [nextTx, ...target.expenses] };
     await AsyncStorage.setItem(newKey, JSON.stringify(merged));
   }
 
-  if (next.note) {
-    saveRecentNote(next.note, next.amount, next.category).catch(err =>
+  if (nextTx.note) {
+    saveRecentNote(nextTx.note, nextTx.amount, nextTx.category).catch(err =>
       console.error('Failed to save recent note:', err),
     );
   }
 
-  patchTransaction(next).catch(err => console.error('Background sync failed:', err));
+  patchTransaction(nextTx).catch(err => console.error('Background sync failed:', err));
+  requestSyncNow();
 };
 
 export const deleteTransaction = async (tx: Transaction) => {
@@ -218,6 +212,7 @@ export const deleteTransaction = async (tx: Transaction) => {
   if (tx.id) {
     deleteTransactionRemote(tx.id).catch(err => console.error('Background delete failed:', err));
   }
+  requestSyncNow();
 };
 
 export const getSummaries = (data: MonthData) => {
@@ -273,6 +268,7 @@ export const saveUserProfile = async (profile: UserProfile) => {
     await AsyncStorage.setItem('user_profile', JSON.stringify(profile));
     // Push to cloud in the background
     syncProfile(profile).catch(err => console.error('Profile sync failed:', err));
+    requestSyncNow();
   } catch (error) {
     console.error('Error saving profile:', error);
   }

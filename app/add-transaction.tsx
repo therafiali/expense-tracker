@@ -229,9 +229,10 @@ export default function AddTransactionScreen() {
 
   const todayDate = new Date();
   const yesterdayDate = subDays(todayDate, 1);
+  const dayBeforeYesterdayDate = subDays(todayDate, 2);
   const txIsToday = isToday(txDate);
   const txIsYesterday = isYesterday(txDate);
-  const txIsCustomDate = !txIsToday && !txIsYesterday;
+  const txIsDayBeforeYesterday = isSameDay(txDate, dayBeforeYesterdayDate);
 
   const handleSave = async () => {
     if (saving) return;
@@ -578,19 +579,19 @@ export default function AddTransactionScreen() {
                 style={[
                   styles.dateQuickChip,
                   { backgroundColor: colors.card2, borderColor: colors.border },
-                  txIsCustomDate && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
+                  txIsDayBeforeYesterday && { backgroundColor: colors.primaryMuted, borderColor: colors.primary },
                 ]}
-                onPress={openDatePicker}
+                onPress={() => applyCalendarDay(dayBeforeYesterdayDate)}
                 activeOpacity={0.8}
               >
                 <Text
                   style={[
                     styles.dateQuickChipText,
                     { color: colors.subtext },
-                    txIsCustomDate && { color: colors.heading, fontWeight: '800' },
+                    txIsDayBeforeYesterday && { color: colors.heading, fontWeight: '800' },
                   ]}
                 >
-                  {format(txDate, 'd - MMM')}
+                  {format(dayBeforeYesterdayDate, 'd - MMM')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
