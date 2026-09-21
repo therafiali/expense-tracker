@@ -109,6 +109,7 @@ export default function AddTransactionScreen() {
   const [originalTx, setOriginalTx] = useState<Transaction | null>(null);
   const [editLoadFailed, setEditLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveAction, setSaveAction] = useState<'exit' | 'add' | null>(null);
   const [allRecentNotes, setAllRecentNotes] = useState<NoteSuggestion[]>([]);
   const [filteredNotes, setFilteredNotes] = useState<NoteSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -234,45 +235,64 @@ export default function AddTransactionScreen() {
   const txIsYesterday = isYesterday(txDate);
   const txIsDayBeforeYesterday = isSameDay(txDate, dayBeforeYesterdayDate);
 
-  const handleSave = async () => {
-    if (saving) return;
-    if (isEditMode && !originalTx) return;
+  const persistCurrent = async () => {
+    if (isEditMode && !originalTx) return false;
     const parsed = parseFloat(amount);
-    if (!parsed || isNaN(parsed)) return;
-    if (type === 'expense' && !selectedCategory) return;
+    if (!parsed || isNaN(parsed)) return false;
+    if (type === 'expense' && !selectedCategory) return false;
 
+    const isoDate =
+      isEditMode && originalTx
+        ? applyTimeFrom(originalTx.date, txDate).toISOString()
+        : applyTimeFrom(new Date().toISOString(), txDate).toISOString();
+
+    const paidWithValue: PaidWith | undefined = type === 'expense' ? paidWith : undefined;
+
+    if (isEditMode && originalTx) {
+      await updateTransaction(originalTx, {
+        ...originalTx,
+        amount: parsed,
+        date: isoDate,
+        note: note.trim() || undefined,
+        category: type === 'expense' ? selectedCategory! : undefined,
+        type,
+        paidWith: paidWithValue,
+      });
+    } else {
+      await saveTransaction(parseISO(isoDate), {
+        amount: parsed,
+        date: isoDate,
+        note: note.trim() || undefined,
+        category: type === 'expense' ? selectedCategory! : undefined,
+        type,
+        paidWith: paidWithValue,
+      });
+    }
+    return true;
+  };
+
+  const handleSave = async (addAnother = false) => {
+    if (saving) return;
+
+    setSaveAction(addAnother ? 'add' : 'exit');
     setSaving(true);
     try {
-      const isoDate =
-        isEditMode && originalTx
-          ? applyTimeFrom(originalTx.date, txDate).toISOString()
-          : applyTimeFrom(new Date().toISOString(), txDate).toISOString();
+      const saved = await persistCurrent();
+      if (!saved) return;
 
-      const paidWithValue: PaidWith | undefined = type === 'expense' ? paidWith : undefined;
-
-      if (isEditMode && originalTx) {
-        await updateTransaction(originalTx, {
-          ...originalTx,
-          amount: parsed,
-          date: isoDate,
-          note: note.trim() || undefined,
-          category: type === 'expense' ? selectedCategory! : undefined,
-          type,
-          paidWith: paidWithValue,
-        });
-      } else {
-        await saveTransaction(parseISO(isoDate), {
-          amount: parsed,
-          date: isoDate,
-          note: note.trim() || undefined,
-          category: type === 'expense' ? selectedCategory! : undefined,
-          type,
-          paidWith: paidWithValue,
-        });
+      if (addAnother && !isEditMode) {
+        setNote('');
+        setAmount('');
+        const notes = await getRecentNotes();
+        setAllRecentNotes(notes);
+        setTimeout(() => amountRef.current?.focus(), 50);
+        return;
       }
+
       router.replace('/(tabs)');
     } finally {
       setSaving(false);
+      setSaveAction(null);
     }
   };
 
@@ -559,7 +579,7 @@ export default function AddTransactionScreen() {
                 value={amount}
                 onChangeText={handleAmountChange}
                 returnKeyType="done"
-                onSubmitEditing={canSave ? handleSave : undefined}
+                onSubmitEditing={canSave ? () => handleSave() : undefined}
               />
             </View>
           </View>
@@ -718,33 +738,61 @@ export default function AddTransactionScreen() {
             </Modal>
           </View>
 
-          {/* Save button */}
-          <TouchableOpacity
-            style={[
-              styles.saveBtn,
-              canSave && { backgroundColor: colors.primary },
-              !canSave && [styles.saveBtnDisabled, { backgroundColor: colors.card }],
-            ]}
-            onPress={handleSave}
-            disabled={!canSave || saving}
-            activeOpacity={0.85}
-          >
-            <Text
+          {/* Save buttons */}
+          <View style={isEditMode ? undefined : styles.saveRow}>
+            {!isEditMode ? (
+              <TouchableOpacity
+                style={[
+                  styles.saveBtn,
+                  styles.saveBtnInRow,
+                  styles.saveBtnSecondary,
+                  canSave && { borderColor: colors.primary, backgroundColor: colors.card },
+                  !canSave && [styles.saveBtnDisabled, { backgroundColor: colors.card, borderColor: colors.border }],
+                ]}
+                onPress={() => handleSave(true)}
+                disabled={!canSave || saving}
+                activeOpacity={0.85}
+              >
+                <Text
+                  style={[
+                    styles.saveBtnText,
+                    canSave && { color: colors.isDark ? colors.primary : colors.heading },
+                    !canSave && [styles.saveBtnTextDisabled, { color: colors.muted }],
+                  ]}
+                  numberOfLines={1}
+                >
+                  {saving && saveAction === 'add' ? 'Saving…' : 'Save and Add'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <TouchableOpacity
               style={[
-                styles.saveBtnText,
-                canSave && { color: colors.primaryForeground },
-                !canSave && [styles.saveBtnTextDisabled, { color: colors.muted }],
+                styles.saveBtn,
+                !isEditMode && styles.saveBtnInRow,
+                canSave && { backgroundColor: colors.primary },
+                !canSave && [styles.saveBtnDisabled, { backgroundColor: colors.card }],
               ]}
+              onPress={() => handleSave()}
+              disabled={!canSave || saving}
+              activeOpacity={0.85}
             >
-              {saving
-                ? 'Saving…'
-                : isEditMode
-                  ? 'Save changes'
-                  : type === 'expense'
-                    ? 'Save Expense'
-                    : 'Save Income'}
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[
+                  styles.saveBtnText,
+                  canSave && { color: colors.primaryForeground },
+                  !canSave && [styles.saveBtnTextDisabled, { color: colors.muted }],
+                ]}
+                numberOfLines={1}
+              >
+                {saving && saveAction !== 'add'
+                  ? 'Saving…'
+                  : isEditMode
+                    ? 'Save changes'
+                    : 'Save'}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           {isEditMode && originalTx ? (
             <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} activeOpacity={0.85}>
@@ -943,16 +991,30 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '800',
   },
-  // Save button
+  // Save buttons
+  saveRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
   saveBtn: {
     borderRadius: radii.lg,
     paddingVertical: 16,
+    paddingHorizontal: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 12,
+  },
+  saveBtnInRow: {
+    flex: 1,
+    marginTop: 0,
+  },
+  saveBtnSecondary: {
+    borderWidth: 1.5,
   },
   saveBtnDisabled: {},
   saveBtnText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   saveBtnTextDisabled: {},

@@ -229,7 +229,7 @@ export const getSummaries = (data: MonthData) => {
     totalExpenses,
     cashExpenses,
     onlineExpenses,
-    balance: totalIncome - totalExpenses,
+    balance: totalIncome - cashExpenses,
   };
 };
 

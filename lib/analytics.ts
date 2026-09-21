@@ -7,7 +7,7 @@ import {
   addMonths,
 } from 'date-fns';
 import type { Transaction, MonthData } from './types';
-import { getMonthData } from './storage';
+import { getMonthData, resolvePaidWith } from './storage';
 
 /** Display-only cleanup for known typos / overlaps. */
 export const CATEGORY_ALIASES: Record<string, string> = {
@@ -229,12 +229,16 @@ export function computeMonthlyTrend(transactions: Transaction[], monthStarts: Da
     const monthEnd = endOfMonth(monthStart);
     let income = 0;
     let expense = 0;
+    let cashExpense = 0;
 
     for (const t of transactions) {
       const d = parseISO(t.date);
       if (d < monthStart || d > monthEnd) continue;
       if (t.type === 'income') income += t.amount;
-      else expense += t.amount;
+      else {
+        expense += t.amount;
+        if (resolvePaidWith(t) !== 'online') cashExpense += t.amount;
+      }
     }
 
     return {
@@ -242,7 +246,7 @@ export function computeMonthlyTrend(transactions: Transaction[], monthStarts: Da
       label: format(monthStart, 'MMM yy'),
       income,
       expense,
-      balance: income - expense,
+      balance: income - cashExpense,
     };
   });
 }

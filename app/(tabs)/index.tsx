@@ -303,10 +303,31 @@ export default function HomeScreen() {
 
         {/* Balance Card */}
         <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.balanceLabel, { color: colors.muted }]}>Total Balance</Text>
-          <Text style={[styles.balanceValue, { color: balance >= 0 ? colors.text : '#EF4444' }]}>
-            {balance < 0 ? '-' : ''}{Math.abs(balance).toFixed(2)}
-          </Text>
+          <View style={styles.heroRow}>
+            <View style={styles.heroCol}>
+              <Text style={[styles.balanceLabel, { color: colors.muted }]}>Total Balance</Text>
+              <Text
+                style={[styles.balanceValue, { color: balance >= 0 ? colors.text : '#EF4444' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.55}
+              >
+                {balance < 0 ? '-' : ''}{Math.abs(balance).toFixed(2)}
+              </Text>
+            </View>
+            <View style={[styles.heroDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.heroCol}>
+              <Text style={[styles.balanceLabel, { color: colors.muted }]}>Total Expenses</Text>
+              <Text
+                style={[styles.balanceValue, { color: colors.expense }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.55}
+              >
+                {totalExpenses.toFixed(2)}
+              </Text>
+            </View>
+          </View>
           {/* Month switcher */}
           <View style={styles.monthRow}>
             <TouchableOpacity onPress={() => setCurrentDate(subMonths(currentDate, 1))} style={[styles.chevronBtn, { backgroundColor: colors.card2 }]}>
@@ -318,7 +339,6 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Income / Expense strip */}
           <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
             <View style={styles.statItem}>
               <View style={[styles.statDot, { backgroundColor: colors.income }]} />
@@ -328,16 +348,6 @@ export default function HomeScreen() {
               </View>
             </View>
             <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-            <View style={styles.statItem}>
-              <View style={[styles.statDot, { backgroundColor: colors.expense }]} />
-              <View>
-                <Text style={[styles.statLabel, { color: colors.muted }]}>Total expenses</Text>
-                <Text style={[styles.statExpense, { color: colors.expense }]}>{totalExpenses.toFixed(0)}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={[styles.statsRow, { backgroundColor: colors.bg }]}>
             <View style={styles.statItem}>
               <View style={[styles.statDot, { backgroundColor: '#F59E0B' }]} />
               <View>
@@ -756,8 +766,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 8,
   },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  heroCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  heroDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginHorizontal: 14,
+    marginVertical: 2,
+  },
   balanceLabel: { fontSize: 13, fontWeight: '500' },
-  balanceValue: { fontSize: 36, fontWeight: '800', letterSpacing: -1 },
+  balanceValue: { fontSize: 36, fontWeight: '800', letterSpacing: -1, marginTop: 2 },
   monthRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -780,12 +804,12 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 8,
   },
-  statItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
   statDot: { width: 8, height: 8, borderRadius: 4 },
   statLabel: { fontSize: 11 },
   statIncome: { fontSize: 15, fontWeight: '700' },
   statExpense: { fontSize: 15, fontWeight: '700' },
-  statDivider: { width: 1, height: 32, marginHorizontal: 8 },
+  statDivider: { width: 1, height: 32, marginHorizontal: 6 },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
