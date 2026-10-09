@@ -7,6 +7,7 @@
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "android:build": "eas build --platform android --profile preview",
+    "android:push-preview": "eas update --channel preview --platform android --message \"preview test\"",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint"
