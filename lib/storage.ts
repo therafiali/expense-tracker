@@ -2,10 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { parseISO } from 'date-fns';
 import { pushTransaction, patchTransaction, deleteTransactionRemote, syncProfile, requestSyncNow } from './sync';
 import { ensureValidTransactionId, isValidUuid } from './ids';
-import { Category, Transaction, UserProfile, MonthData, getMonthKey, CURRENCY_SYMBOLS, type PaidWith } from './types';
+import { Category, Transaction, UserProfile, MonthData, getMonthKey, CURRENCY_SYMBOLS, type PaidWith, type MonthReconciliation } from './types';
 
 export { Category, Transaction, UserProfile, MonthData, getMonthKey };
-export type { PaidWith };
+export type { PaidWith, MonthReconciliation };
 export { generateTransactionId, isValidUuid, ensureValidTransactionId } from './ids';
 
 export const resolvePaidWith = (tx: Pick<Transaction, 'type' | 'paidWith'>): PaidWith => {
@@ -297,12 +297,72 @@ const FIXED_APP_KEYS = [
 export async function clearLocalAppStorage(): Promise<void> {
   const keys = await AsyncStorage.getAllKeys();
   const toRemove = keys.filter(
-    (k) => k.startsWith('data_') || (FIXED_APP_KEYS as readonly string[]).includes(k),
+    (k) =>
+      k.startsWith('data_') ||
+      k.startsWith('reconciliation_') ||
+      k.startsWith('carry_forward_') ||
+      (FIXED_APP_KEYS as readonly string[]).includes(k),
   );
   if (toRemove.length > 0) {
     await AsyncStorage.multiRemove(toRemove);
   }
 }
+
+// ─── Month Reconciliation ──────────────────────────────────────────────────
+
+export const getReconciliation = async (monthKey: string): Promise<MonthReconciliation | null> => {
+  try {
+    const data = await AsyncStorage.getItem(`reconciliation_${monthKey}`);
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveReconciliation = async (rec: MonthReconciliation): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(`reconciliation_${rec.monthKey}`, JSON.stringify(rec));
+  } catch (error) {
+    console.error('Error saving reconciliation:', error);
+  }
+};
+
+// ─── Carry Forward ─────────────────────────────────────────────────────────
+
+/** Returns the carry-forward amount saved for a month, or null if not set. */
+export const getCarryForward = async (monthKey: string): Promise<number | null> => {
+  try {
+    const data = await AsyncStorage.getItem(`carry_forward_${monthKey}`);
+    return data !== null ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveCarryForward = async (monthKey: string, amount: number): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(`carry_forward_${monthKey}`, JSON.stringify(amount));
+  } catch (error) {
+    console.error('Error saving carry forward:', error);
+  }
+};
+
+// ─── Monthly Check Prompt Tracking ─────────────────────────────────────────
+
+/** Returns the month key (yyyy_MM) of the last time we auto-prompted the balance check. */
+export const getLastCheckPromptMonth = async (): Promise<string | null> => {
+  try {
+    return await AsyncStorage.getItem('last_check_prompt_month');
+  } catch {
+    return null;
+  }
+};
+
+export const setLastCheckPromptMonth = async (monthKey: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem('last_check_prompt_month', monthKey);
+  } catch {}
+};
 
 /** Removes everything in AsyncStorage, including auth session and theme. */
 export async function clearAllAsyncStorage(): Promise<void> {

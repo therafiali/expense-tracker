@@ -1,4 +1,5 @@
 # Welcome to your Expo app 👋
+<!-- npx eas-cli update --channel preview --message "add expense another button " -->
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 

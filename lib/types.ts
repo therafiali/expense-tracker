@@ -92,6 +92,15 @@ export const getMonthKey = (date: Date) => `data_${format(date, 'yyyy_MM')}`;
 
 
 
+export interface MonthReconciliation {
+  monthKey: string;        // yyyy_MM
+  appBalance: number;      // what the app computed
+  actualBalance: number;   // what user entered from bank/wallet
+  difference: number;      // actualBalance - appBalance (negative = missed expenses)
+  reconciledAt: string;    // ISO datetime
+  adjustmentCreated: boolean;
+}
+
 export const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
   EUR: '€',

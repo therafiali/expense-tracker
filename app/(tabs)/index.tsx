@@ -39,6 +39,10 @@ import {
   Smartphone,
   SlidersHorizontal,
   ChevronDown,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRightLeft,
+  Scale,
 } from 'lucide-react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -48,8 +52,18 @@ import {
   getSummaries,
   getUserProfile,
   resolvePaidWith,
+  saveTransaction,
+  ensureValidTransactionId,
+  getReconciliation,
+  saveReconciliation,
+  getCarryForward,
+  saveCarryForward,
+  getCurrencySymbol,
+  getLastCheckPromptMonth,
+  setLastCheckPromptMonth,
   type MonthData,
   type Transaction,
+  type MonthReconciliation,
 } from '@/lib/storage';
 import { iconForCategory, colorForCategory } from '@/components/category-icon';
 
@@ -118,10 +132,52 @@ export default function HomeScreen() {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // Reconciliation & carry-forward state
+  const [reconciliation, setReconciliation] = useState<MonthReconciliation | null>(null);
+  const [showReconcileModal, setShowReconcileModal] = useState(false);
+  // autoPrompt* is set when the check fires for the PREVIOUS month automatically
+  const [autoPromptDate, setAutoPromptDate] = useState<Date | null>(null);
+  const [autoPromptBalance, setAutoPromptBalance] = useState(0);
+  const [prevMonthBalance, setPrevMonthBalance] = useState(0);
+  const [prevMonthKey, setPrevMonthKey] = useState('');
+  const [carryForwardDone, setCarryForwardDone] = useState(false);
+  const [showCarryForwardModal, setShowCarryForwardModal] = useState(false);
+  const [carryToNextMonth, setCarryToNextMonth] = useState(false); // true = current→next, false = prev→current
+  const [currencySymbol, setCurrencySymbol] = useState('$');
+
   const loadData = useCallback(async () => {
     setLoading(true);
     const monthData = await getMonthData(currentDate);
     setData(monthData);
+
+    // Load currency symbol
+    getCurrencySymbol().then(setCurrencySymbol);
+
+    // Load reconciliation for current month
+    const mKey = format(currentDate, 'yyyy_MM');
+    const rec = await getReconciliation(mKey);
+    setReconciliation(rec);
+
+    // Carry-forward: check by looking at actual income transactions (not AsyncStorage flag)
+    // This way: deleting the "Balance from X" income transaction auto-resets the banner
+    const prevMonth = subMonths(currentDate, 1);
+    const prevKey = format(prevMonth, 'yyyy_MM');
+    const prevMonthLabel = format(prevMonth, 'MMMM yyyy');
+    setPrevMonthKey(prevKey);
+
+    const alreadyCarried = monthData.income.some(
+      (t) => t.note?.startsWith('Balance from ')
+    );
+    setCarryForwardDone(alreadyCarried);
+
+    if (!alreadyCarried) {
+      const prevData = await getMonthData(prevMonth);
+      const prevSummary = getSummaries(prevData);
+      const prevClosing = prevSummary.balance; // income - cash expenses
+      setPrevMonthBalance(prevClosing > 0 ? prevClosing : 0);
+    } else {
+      setPrevMonthBalance(0);
+    }
 
     const rangeStart = fromDate ? parseISO(fromDate) : startOfMonth(currentDate);
     const rangeEnd = toDate ? parseISO(toDate) : endOfMonth(currentDate);
@@ -171,7 +227,42 @@ export default function HomeScreen() {
     return () => sub.remove();
   }, [loadData]);
 
+  // Auto-prompt: once per month, ask the user to check their balance for the previous month
+  useEffect(() => {
+    if (!isFocused) return;
+    (async () => {
+      const thisMonthKey = format(new Date(), 'yyyy_MM');
+      const lastPrompted = await getLastCheckPromptMonth();
+      if (lastPrompted === thisMonthKey) return; // already asked this month
+
+      const prevMonth = subMonths(new Date(), 1);
+      const prevKey = format(prevMonth, 'yyyy_MM');
+      const prevData = await getMonthData(prevMonth);
+      const hasPrevData = prevData.income.length > 0 || prevData.expenses.length > 0;
+      if (!hasPrevData) return; // nothing to check
+
+      const prevRec = await getReconciliation(prevKey);
+      if (prevRec) return; // already checked by the user
+
+      // Mark as prompted so we don't ask again this month
+      await setLastCheckPromptMonth(thisMonthKey);
+
+      const prevSummary = getSummaries(prevData);
+      setAutoPromptDate(prevMonth);
+      setAutoPromptBalance(prevSummary.totalExpenses);
+      setShowReconcileModal(true);
+    })();
+  }, [isFocused]);
+
   const { totalIncome, totalExpenses, cashExpenses, onlineExpenses, balance } = getSummaries(data);
+
+  // Check if next month already has a carry-forward income from this month
+  const [nextMonthCarryDone, setNextMonthCarryDone] = useState(false);
+  useEffect(() => {
+    getMonthData(addMonths(currentDate, 1)).then((d) => {
+      setNextMonthCarryDone(d.income.some((t) => t.note?.startsWith('Balance from ')));
+    });
+  }, [currentDate]);
 
   const allTransactions: Transaction[] = useMemo(
     () =>
@@ -364,7 +455,75 @@ export default function HomeScreen() {
               </View>
             </View>
           </View>
+
+          {/* Balance check row */}
+          <View style={[styles.reconcileRow, { borderTopColor: colors.border }]}>
+            {reconciliation ? (
+              <View style={styles.reconciledStatus}>
+                <CheckCircle2 size={13} color="#22C55E" />
+                <Text style={[styles.reconciledText, { color: colors.muted }]}>
+                  Matched {currencySymbol}{reconciliation.actualBalance.toFixed(0)}
+                </Text>
+              </View>
+            ) : (
+              <View style={{ width: 1 }} />
+            )}
+            <TouchableOpacity
+              style={[styles.reconcileBtn, { backgroundColor: colors.card2, borderColor: colors.border }]}
+              onPress={() => { setAutoPromptDate(null); setShowReconcileModal(true); }}
+              activeOpacity={0.8}
+            >
+              <Scale size={12} color={colors.muted} />
+              <Text style={[styles.reconcileBtnText, { color: colors.muted }]}>
+                Check balance
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Move current month balance to next month */}
+        {!nextMonthCarryDone && balance > 0 && (
+          <TouchableOpacity
+            style={[styles.carryBanner, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => {
+              setPrevMonthBalance(balance);
+              setCarryToNextMonth(true);
+              setShowCarryForwardModal(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <ArrowRightLeft size={16} color={colors.heading} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.carryBannerTitle, { color: colors.text }]}>
+                Move ₨{balance.toFixed(0)} to {format(addMonths(currentDate, 1), 'MMMM')}?
+              </Text>
+              <Text style={[styles.carryBannerSub, { color: colors.muted }]}>
+                Tap to carry this balance to next month
+              </Text>
+            </View>
+            <ChevronRight size={16} color={colors.muted} />
+          </TouchableOpacity>
+        )}
+
+        {/* Bring money from last month banner */}
+        {!carryForwardDone && prevMonthBalance > 0 && (
+          <TouchableOpacity
+            style={[styles.carryBanner, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => { setCarryToNextMonth(false); setShowCarryForwardModal(true); }}
+            activeOpacity={0.8}
+          >
+            <ArrowRightLeft size={16} color={colors.heading} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.carryBannerTitle, { color: colors.text }]}>
+                You had {currencySymbol}{prevMonthBalance.toFixed(0)} left in {format(subMonths(currentDate, 1), 'MMMM')}
+              </Text>
+              <Text style={[styles.carryBannerSub, { color: colors.muted }]}>
+                Tap to add it to this month
+              </Text>
+            </View>
+            <ChevronRight size={16} color={colors.muted} />
+          </TouchableOpacity>
+        )}
 
         {/* Transactions */}
         <View style={styles.sectionHeader}>
@@ -634,9 +793,365 @@ export default function HomeScreen() {
         onSelectDay={applyPickedDate}
         onClose={() => setDatePickerTarget(null)}
       />
+
+      <ReconciliationModal
+        visible={showReconcileModal}
+        colors={colors}
+        appBalance={autoPromptDate ? autoPromptBalance : totalExpenses}
+        monthKey={autoPromptDate ? format(autoPromptDate, 'yyyy_MM') : format(currentDate, 'yyyy_MM')}
+        monthLabel={autoPromptDate ? format(autoPromptDate, 'MMMM') : format(currentDate, 'MMMM')}
+        currencySymbol={currencySymbol}
+        existing={autoPromptDate ? null : reconciliation}
+        onClose={() => {
+          setShowReconcileModal(false);
+          setAutoPromptDate(null);
+        }}
+        onSaved={(rec) => {
+          if (!autoPromptDate) setReconciliation(rec);
+          setAutoPromptDate(null);
+          loadData();
+          // Chain: if there's a positive actual balance and carry-forward not done, auto-show it
+          if (rec.actualBalance > 0 && !carryForwardDone && prevMonthBalance > 0) {
+            setTimeout(() => setShowCarryForwardModal(true), 350);
+          }
+        }}
+      />
+
+      <CarryForwardModal
+        visible={showCarryForwardModal}
+        colors={colors}
+        amount={prevMonthBalance}
+        fromMonthLabel={carryToNextMonth
+          ? format(currentDate, 'MMMM yyyy')
+          : format(subMonths(currentDate, 1), 'MMMM yyyy')}
+        toMonthLabel={carryToNextMonth
+          ? format(addMonths(currentDate, 1), 'MMMM yyyy')
+          : format(currentDate, 'MMMM yyyy')}
+        currencySymbol={currencySymbol}
+        onClose={() => { setShowCarryForwardModal(false); setCarryToNextMonth(false); }}
+        onConfirm={async () => {
+          const targetMonth = carryToNextMonth ? addMonths(currentDate, 1) : currentDate;
+          const targetMonthKey = format(targetMonth, 'yyyy_MM');
+          const firstOfTarget = startOfMonth(targetMonth);
+          const sourceLabel = carryToNextMonth
+            ? format(currentDate, 'MMMM yyyy')
+            : format(subMonths(currentDate, 1), 'MMMM yyyy');
+          const carryTx: Transaction = {
+            type: 'income',
+            amount: prevMonthBalance,
+            date: firstOfTarget.toISOString(),
+            note: `Balance from ${sourceLabel}`,
+          };
+          await saveTransaction(firstOfTarget, ensureValidTransactionId(carryTx));
+          if (carryToNextMonth) {
+            setNextMonthCarryDone(true);
+          } else {
+            setCarryForwardDone(true);
+          }
+          setPrevMonthBalance(0);
+          setCarryToNextMonth(false);
+          setShowCarryForwardModal(false);
+          loadData();
+        }}
+      />
     </SafeAreaView>
   );
 }
+
+// ─── Reconciliation Modal ────────────────────────────────────────────────────
+
+function ReconciliationModal({
+  visible,
+  colors,
+  appBalance,
+  monthKey,
+  monthLabel,
+  currencySymbol,
+  existing,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  colors: ThemeColors;
+  appBalance: number;
+  monthKey: string;
+  monthLabel: string;
+  currencySymbol: string;
+  existing: MonthReconciliation | null;
+  onClose: () => void;
+  onSaved: (rec: MonthReconciliation) => void;
+}) {
+  const [actualInput, setActualInput] = useState('');
+  const [createAdjustment, setCreateAdjustment] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setActualInput(existing ? existing.actualBalance.toString() : '');
+      setCreateAdjustment(true);
+    }
+  }, [visible, existing]);
+
+  const actualNum = parseFloat(actualInput.replace(',', '.')) || 0;
+  // Bank expenses > app expenses = missed expense; bank < app = over-recorded
+  const difference = actualNum - appBalance;
+  const hasInput = actualInput.trim() !== '' && !isNaN(parseFloat(actualInput));
+  const hasDiff = hasInput && Math.abs(difference) >= 0.01;
+  const missedExpenses = hasDiff && difference > 0;  // bank spent more than app recorded
+  const overRecorded = hasDiff && difference < 0;    // app recorded more than bank shows
+
+  const handleSave = async () => {
+    if (!hasInput) return;
+    setSaving(true);
+    try {
+      const rec: MonthReconciliation = {
+        monthKey,
+        appBalance,
+        actualBalance: actualNum,
+        difference,
+        reconciledAt: new Date().toISOString(),
+        adjustmentCreated: false,
+      };
+
+      if (hasDiff && createAdjustment) {
+        // Put the adjustment on the last day of the reconciled month (not today)
+        const [y, mo] = monthKey.split('_').map(Number);
+        const adjDate = endOfMonth(new Date(y, mo - 1, 1));
+        const tx: Transaction = missedExpenses
+          ? {
+              type: 'expense',
+              amount: Math.abs(difference),
+              date: adjDate.toISOString(),
+              note: 'Missed expense',
+              category: 'Other',
+              paidWith: 'cash',
+            }
+          : {
+              type: 'expense',
+              amount: Math.abs(difference),
+              date: adjDate.toISOString(),
+              note: 'Over-recorded adjustment',
+              category: 'Other',
+              paidWith: 'cash',
+            };
+        await saveTransaction(adjDate, ensureValidTransactionId(tx));
+        rec.adjustmentCreated = true;
+      }
+
+      await saveReconciliation(rec);
+      onSaved(rec);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
+        <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.modalHeading, { color: colors.text }]}>{monthLabel}</Text>
+          <Text style={[styles.modalSub, { color: colors.muted }]}>
+            Enter total expenses from your bank or actual source.
+          </Text>
+
+          {/* App tracked expenses row */}
+          <View style={[styles.recRow, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            <Text style={[styles.recRowLabel, { color: colors.muted }]}>App recorded expenses</Text>
+            <Text style={[styles.recRowValue, { color: colors.text }]}>
+              {currencySymbol}{appBalance.toFixed(2)}
+            </Text>
+          </View>
+
+          {/* Actual expenses input */}
+          <View style={[styles.recInputWrap, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            <Text style={[styles.recRowLabel, { color: colors.muted }]}>Bank / actual total spent</Text>
+            <View style={styles.recInputRow}>
+              <Text style={[styles.recCurrency, { color: colors.subtext }]}>{currencySymbol}</Text>
+              <TextInput
+                style={[styles.recInput, { color: colors.text }]}
+                value={actualInput}
+                onChangeText={setActualInput}
+                placeholder="0.00"
+                placeholderTextColor={colors.placeholder}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                autoFocus
+              />
+            </View>
+          </View>
+
+          {/* No difference — perfect match */}
+          {hasInput && !hasDiff && (
+            <View style={[styles.diffBox, { backgroundColor: '#22C55E18', borderColor: '#22C55E' }]}>
+              <CheckCircle2 size={14} color="#22C55E" style={{ marginTop: 1 }} />
+              <Text style={[styles.diffAmount, { color: '#22C55E', flex: 1 }]}>
+                All good — everything matches!
+              </Text>
+            </View>
+          )}
+
+          {/* Gap found */}
+          {hasDiff && (
+            <View
+              style={[
+                styles.diffBox,
+                {
+                  backgroundColor: missedExpenses ? '#EF444418' : '#22C55E18',
+                  borderColor: missedExpenses ? '#EF4444' : '#22C55E',
+                },
+              ]}
+            >
+              <AlertTriangle
+                size={14}
+                color={missedExpenses ? '#EF4444' : '#22C55E'}
+                style={{ marginTop: 1 }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.diffAmount, { color: missedExpenses ? '#EF4444' : '#22C55E' }]}>
+                  {missedExpenses
+                    ? `₨${Math.abs(difference).toFixed(2)} in missed expenses`
+                    : `₨${Math.abs(difference).toFixed(2)} extra recorded in app`}
+                </Text>
+                <Text style={[styles.diffDesc, { color: colors.muted }]}>
+                  {missedExpenses
+                    ? 'Bank shows more spending than app — some expenses were not logged.'
+                    : 'App shows more expenses than bank — may have a duplicate entry.'}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Auto-fix checkbox */}
+          {hasDiff && (
+            <TouchableOpacity
+              style={styles.checkRow}
+              onPress={() => setCreateAdjustment((v) => !v)}
+              activeOpacity={0.7}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    backgroundColor: createAdjustment ? colors.primary : colors.bg,
+                    borderColor: createAdjustment ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                {createAdjustment && <CheckCircle2 size={14} color="#FFF" />}
+              </View>
+              <Text style={[styles.checkLabel, { color: colors.subtext }]}>
+                {missedExpenses
+                  ? `Add ${currencySymbol}${Math.abs(difference).toFixed(2)} as missed expense in ${monthLabel}`
+                  : `Remove ${currencySymbol}${Math.abs(difference).toFixed(2)} as over-recorded in ${monthLabel}`}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Save button */}
+          <TouchableOpacity
+            style={[
+              styles.modalBtn,
+              { backgroundColor: hasInput ? colors.heading : colors.card2 },
+            ]}
+            onPress={handleSave}
+            disabled={!hasInput || saving}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.modalBtnText, { color: hasInput ? '#FFF' : colors.muted }]}>
+              {saving ? 'Saving…' : 'Save'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.modalCancelBtn} onPress={onClose} activeOpacity={0.7}>
+            <Text style={[styles.modalCancelText, { color: colors.muted }]}>Skip for now</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Carry Forward Modal ─────────────────────────────────────────────────────
+
+function CarryForwardModal({
+  visible,
+  colors,
+  amount,
+  fromMonthLabel,
+  toMonthLabel,
+  currencySymbol,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  colors: ThemeColors;
+  amount: number;
+  fromMonthLabel: string;
+  toMonthLabel: string;
+  currencySymbol: string;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    setLoading(true);
+    try {
+      await onConfirm();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
+        <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.carryIconWrap, { backgroundColor: colors.primaryMuted }]}>
+            <ArrowRightLeft size={24} color={colors.heading} />
+          </View>
+          <Text style={[styles.modalHeading, { color: colors.text }]}>
+            Add last month's savings? 💰
+          </Text>
+          <Text style={[styles.modalSub, { color: colors.muted }]}>
+            You had money left over in {fromMonthLabel}. Want to start {toMonthLabel} with it?
+          </Text>
+
+          <View style={[styles.carryAmountBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            <Text style={[styles.carryAmountLabel, { color: colors.muted }]}>Left over from {fromMonthLabel}</Text>
+            <Text style={[styles.carryAmountValue, { color: colors.income }]}>
+              +{currencySymbol}{amount.toFixed(2)}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.modalBtn, { backgroundColor: colors.heading }]}
+            onPress={handleConfirm}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.modalBtnText, { color: '#FFF' }]}>
+              {loading ? 'Adding…' : `Yes, add ${currencySymbol}${amount.toFixed(0)} to ${toMonthLabel}`}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.modalCancelBtn, { marginTop: 4 }]}
+            onPress={onClose}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.modalCancelText, { color: colors.muted }]}>No thanks, start fresh</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Date Picker Modal ───────────────────────────────────────────────────────
 
 function DatePickerModal({
   visible,
@@ -1019,5 +1534,208 @@ const styles = StyleSheet.create({
   dateModalCloseText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+
+  // ── Reconcile row (inside balance card) ──
+  reconcileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+    marginTop: 6,
+    borderTopWidth: 1,
+  },
+  reconciledStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  reconciledText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  reconcileHint: {
+    fontSize: 12,
+  },
+  reconcileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  reconcileBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // ── Carry Forward Banner ──
+  carryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
+  carryBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  carryBannerSub: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+
+  // ── Shared Modal Styles ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingBottom: 24,
+  },
+  modalCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 22,
+    gap: 14,
+  },
+  modalHeading: {
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  modalSub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  modalBtn: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  modalBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalCancelBtn: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+
+  // ── Reconciliation Modal Specifics ──
+  recRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  recRowLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  recRowValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  recInputWrap: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  recInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  recCurrency: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  recInput: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: '700',
+    paddingVertical: 2,
+  },
+  diffBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+  },
+  diffAmount: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  diffDesc: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  checkLabel: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  // ── Carry Forward Modal Specifics ──
+  carryIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  carryAmountBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+    gap: 4,
+  },
+  carryAmountLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  carryAmountValue: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  carryAmountFrom: {
+    fontSize: 12,
   },
 });

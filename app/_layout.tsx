@@ -18,6 +18,26 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, AppState, DeviceEventEmitter } from "react-native";
 import "../global.css";
 
+// ─── Home-screen App Shortcuts ────────────────────────────────────────────────
+// Long-press the app icon → "Add Expense" → opens Add Transaction directly.
+// iOS: Haptic Touch / 3D Touch quick actions.
+// Android: App Shortcuts (long-press icon on launcher).
+import QuickActions from "expo-quick-actions";
+import { useQuickActionRouting } from "expo-quick-actions/router";
+
+function setupAppShortcuts() {
+  QuickActions.setItems([
+    {
+      id: "add-expense",
+      title: "Add Expense",
+      subtitle: "Quick log an expense",
+      icon: "compose",                // SF Symbol on iOS; ignored on Android
+      params: { href: "/add-transaction" },
+    },
+  ]);
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
 void SplashScreen.preventAutoHideAsync();
 SplashScreen.setOptions({ duration: 400, fade: true });
 
@@ -27,6 +47,14 @@ function RootLayoutContent() {
   const [isReady, setIsReady] = useState(false);
   const hasCheckedUpdate = useRef(false);
   const { colors, isDark } = useTheme();
+
+  // Handles navigation when app is opened via a home-screen shortcut tap
+  useQuickActionRouting();
+
+  useEffect(() => {
+    // Register long-press home-screen shortcut
+    setupAppShortcuts();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
