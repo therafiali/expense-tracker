@@ -10,6 +10,7 @@
     "android:push-preview": "eas update --channel preview --platform android --message \"preview test\"",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "export:web": "expo export --platform web",
     "lint": "expo lint"
   },
   "dependencies": {

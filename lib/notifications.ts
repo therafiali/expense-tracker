@@ -9,18 +9,23 @@ import {
   parseReminderTime,
 } from './reminders';
 
-// Configure how notifications should be handled when the app is running
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch (e) {
+  console.warn('[notifications] handler setup failed:', e);
+}
 
 export async function requestPermissions() {
+  if (Platform.OS === 'web') return false;
+
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   
@@ -243,6 +248,8 @@ async function scheduleUserReminder(reminder: Reminder): Promise<void> {
 }
 
 export async function resyncNotificationSchedules() {
+  if (Platform.OS === 'web') return;
+
   await Notifications.cancelAllScheduledNotificationsAsync();
   const goals = await getActiveGoals();
   for (const goal of goals) {

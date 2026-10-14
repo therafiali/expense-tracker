@@ -32,6 +32,7 @@ import { useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
 import * as Application from 'expo-application';
+import { getPasswordResetRedirect } from '@/lib/auth-link';
 import { supabase } from '@/lib/supabase';
 import { syncAll } from '@/lib/sync';
 import { Session } from '@supabase/supabase-js';
@@ -46,9 +47,10 @@ export default function ProfileScreen() {
   const [syncing, setSyncing] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
-  const [authMode, setAuthMode] = useState<'login' | 'signup' | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot' | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
   const { colors, isDark, toggleTheme } = useTheme();
   const router = useRouter();
   const installedVersion = Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
@@ -75,11 +77,17 @@ export default function ProfileScreen() {
     Alert.alert('Saved', 'Profile updated.');
   };
 
+  const openAuth = (mode: 'login' | 'signup' | 'forgot') => {
+    setAuthMode(mode);
+    if (!email && profile.email) setEmail(profile.email);
+  };
+
   const handleAuth = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Email and password are required.');
       return;
     }
+    setAuthBusy(true);
     try {
       if (authMode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -98,6 +106,29 @@ export default function ProfileScreen() {
       setPassword('');
     } catch (err: any) {
       Alert.alert('Auth Error', err.message);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert('Email required', 'Enter the email you use to sign in.');
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: getPasswordResetRedirect(),
+      });
+      if (error) throw error;
+      Alert.alert('Check your email', 'We sent a link to reset your password.');
+      setAuthMode('login');
+      setPassword('');
+    } catch (err: any) {
+      Alert.alert('Reset failed', err.message ?? 'Could not send the reset email.');
+    } finally {
+      setAuthBusy(false);
     }
   };
 
@@ -288,8 +319,13 @@ export default function ProfileScreen() {
             authMode ? (
               <View style={styles.authForm}>
                 <Text style={[styles.authTitle, { color: colors.text }]}>
-                  {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                  {authMode === 'login' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : 'Reset Password'}
                 </Text>
+                {authMode === 'forgot' && (
+                  <Text style={[styles.authHint, { color: colors.subtext }]}>
+                    Enter your account email and we will send a link to choose a new password.
+                  </Text>
+                )}
                 <TextInput
                   style={[styles.authInput, { backgroundColor: colors.card2, color: colors.text, borderColor: colors.border }]}
                   placeholder="Email"
@@ -298,26 +334,53 @@ export default function ProfileScreen() {
                   onChangeText={setEmail}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  autoComplete="email"
                 />
-                <TextInput
-                  style={[styles.authInput, { backgroundColor: colors.card2, color: colors.text, borderColor: colors.border }]}
-                  placeholder="Password"
-                  placeholderTextColor={colors.placeholder}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
+                {authMode !== 'forgot' && (
+                  <TextInput
+                    style={[styles.authInput, { backgroundColor: colors.card2, color: colors.text, borderColor: colors.border }]}
+                    placeholder="Password"
+                    placeholderTextColor={colors.placeholder}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    autoComplete={authMode === 'signup' ? 'new-password' : 'password'}
+                  />
+                )}
+                {authMode === 'login' && (
+                  <TouchableOpacity onPress={() => openAuth('forgot')} style={styles.forgotBtn}>
+                    <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot password?</Text>
+                  </TouchableOpacity>
+                )}
                 <View style={styles.authBtns}>
                   <TouchableOpacity
-                    style={[styles.authPrimaryBtn, { backgroundColor: colors.primary }]}
-                    onPress={handleAuth}
+                    style={[styles.authPrimaryBtn, { backgroundColor: colors.primary, opacity: authBusy ? 0.7 : 1 }]}
+                    onPress={authMode === 'forgot' ? handleForgotPassword : handleAuth}
+                    disabled={authBusy}
                   >
-                    <Text style={[styles.authPrimaryText, { color: colors.primaryForeground }]}>
-                      {authMode === 'login' ? 'Login' : 'Sign Up'}
-                    </Text>
+                    {authBusy ? (
+                      <ActivityIndicator color={colors.primaryForeground} />
+                    ) : (
+                      <Text style={[styles.authPrimaryText, { color: colors.primaryForeground }]}>
+                        {authMode === 'login' ? 'Login' : authMode === 'signup' ? 'Sign Up' : 'Send reset link'}
+                      </Text>
+                    )}
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.authSecondaryBtn} onPress={() => setAuthMode(null)}>
-                    <Text style={[styles.authSecondaryText, { color: colors.muted }]}>Cancel</Text>
+                  <TouchableOpacity
+                    style={styles.authSecondaryBtn}
+                    onPress={() => {
+                      if (authMode === 'forgot') {
+                        setAuthMode('login');
+                        return;
+                      }
+                      setAuthMode(null);
+                      setPassword('');
+                    }}
+                    disabled={authBusy}
+                  >
+                    <Text style={[styles.authSecondaryText, { color: colors.muted }]}>
+                      {authMode === 'forgot' ? 'Back' : 'Cancel'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -326,11 +389,11 @@ export default function ProfileScreen() {
                 <Cloud size={28} color={colors.primary} />
                 <Text style={[styles.authPromptText, { color: colors.subtext }]}>Sync data across devices</Text>
                 <View style={styles.authPromptBtns}>
-                  <TouchableOpacity style={[styles.authChip, { backgroundColor: colors.card2, borderColor: colors.border }]} onPress={() => setAuthMode('login')}>
+                  <TouchableOpacity style={[styles.authChip, { backgroundColor: colors.card2, borderColor: colors.border }]} onPress={() => openAuth('login')}>
                     <LogIn size={15} color={colors.text} />
                     <Text style={[styles.authChipText, { color: colors.text }]}>Login</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.authChip, { backgroundColor: colors.card2, borderColor: colors.border }]} onPress={() => setAuthMode('signup')}>
+                  <TouchableOpacity style={[styles.authChip, { backgroundColor: colors.card2, borderColor: colors.border }]} onPress={() => openAuth('signup')}>
                     <UserPlus size={15} color={colors.text} />
                     <Text style={[styles.authChipText, { color: colors.text }]}>Sign Up</Text>
                   </TouchableOpacity>
@@ -533,6 +596,9 @@ const styles = StyleSheet.create({
   // Auth form (logging in)
   authForm: { padding: 16, gap: 12 },
   authTitle: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+  authHint: { fontSize: 13, lineHeight: 18 },
+  forgotBtn: { alignSelf: 'flex-end', marginTop: -4 },
+  forgotText: { fontSize: 13, fontWeight: '600' },
   authInput: {
     backgroundColor: '#1E1E1E',
     borderRadius: 10,

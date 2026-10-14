@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/lib/theme';
 import { Fonts } from '@/constants/fonts';
 import { chartGradients } from '@/constants/designTokens';
+import { useQuickActionRouting } from 'expo-quick-actions/router';
 
 function CustomTabBar() {
   const insets = useSafeAreaInsets();
@@ -115,6 +116,8 @@ function CustomTabBar() {
 }
 
 export default function TabLayout() {
+  useQuickActionRouting();
+
   return (
     <View style={{ flex: 1 }}>
       <Tabs
@@ -126,7 +129,6 @@ export default function TabLayout() {
         <Tabs.Screen name="index" />
         <Tabs.Screen name="goals" />
         <Tabs.Screen name="charts" />
-        <Tabs.Screen name="explore" options={{ href: null }} />
         <Tabs.Screen name="reports" />
         <Tabs.Screen name="profile" />
       </Tabs>

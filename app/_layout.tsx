@@ -1,6 +1,7 @@
 import { ToastHost } from "@/components/toast-host";
 import { requestPermissions, resyncNotificationSchedules, scheduleDailyReminder } from "@/lib/notifications";
 import { getUserProfile } from "@/lib/storage";
+import { createSessionFromUrl, isPasswordRecoveryUrl } from "@/lib/auth-link";
 import { supabase } from "@/lib/supabase";
 import { DATA_SYNCED_EVENT, requestSyncNow } from "@/lib/sync";
 import { ThemeProvider, useTheme } from "@/lib/theme";
@@ -15,28 +16,26 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
-import { Alert, AppState, DeviceEventEmitter } from "react-native";
+import * as Linking from "expo-linking";
+import { Alert, AppState, DeviceEventEmitter, Platform } from "react-native";
+import * as QuickActions from "expo-quick-actions";
 import "../global.css";
 
-// ─── Home-screen App Shortcuts ────────────────────────────────────────────────
-// Long-press the app icon → "Add Expense" → opens Add Transaction directly.
-// iOS: Haptic Touch / 3D Touch quick actions.
-// Android: App Shortcuts (long-press icon on launcher).
-import QuickActions from "expo-quick-actions";
-import { useQuickActionRouting } from "expo-quick-actions/router";
-
 function setupAppShortcuts() {
-  QuickActions.setItems([
-    {
-      id: "add-expense",
-      title: "Add Expense",
-      subtitle: "Quick log an expense",
-      icon: "compose",                // SF Symbol on iOS; ignored on Android
-      params: { href: "/add-transaction" },
-    },
-  ]);
+  try {
+    void QuickActions.setItems([
+      {
+        id: "add-expense",
+        title: "Add Expense",
+        subtitle: "Quick log an expense",
+        icon: "compose",
+        params: { href: "/add-transaction" },
+      },
+    ]);
+  } catch (e) {
+    console.warn("[shortcuts] setup failed:", e);
+  }
 }
-// ──────────────────────────────────────────────────────────────────────────────
 
 void SplashScreen.preventAutoHideAsync();
 SplashScreen.setOptions({ duration: 400, fade: true });
@@ -47,9 +46,6 @@ function RootLayoutContent() {
   const [isReady, setIsReady] = useState(false);
   const hasCheckedUpdate = useRef(false);
   const { colors, isDark } = useTheme();
-
-  // Handles navigation when app is opened via a home-screen shortcut tap
-  useQuickActionRouting();
 
   useEffect(() => {
     // Register long-press home-screen shortcut
@@ -94,6 +90,9 @@ function RootLayoutContent() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        router.push("/reset-password");
+      }
       if (!session) return;
       if (event !== "INITIAL_SESSION" && event !== "SIGNED_IN") return;
       requestSyncNow({ immediate: true });
@@ -116,10 +115,42 @@ function RootLayoutContent() {
       appStateSub.remove();
       dataSyncedSub.remove();
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
-    if (!isReady || __DEV__ || hasCheckedUpdate.current) return;
+    if (Platform.OS === "web") return;
+
+    let active = true;
+
+    const handleUrl = async (url: string | null) => {
+      if (!url || !active || !isPasswordRecoveryUrl(url)) return;
+      try {
+        await createSessionFromUrl(url);
+        router.push("/reset-password");
+      } catch (e: any) {
+        Alert.alert(
+          "Reset link expired",
+          e?.message ?? "Ask for a new reset email from Profile.",
+        );
+      }
+    };
+
+    void Linking.getInitialURL().then((url) => {
+      void handleUrl(url);
+    });
+
+    const linkSub = Linking.addEventListener("url", (event) => {
+      void handleUrl(event.url);
+    });
+
+    return () => {
+      active = false;
+      linkSub.remove();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (!isReady || __DEV__ || Platform.OS === "web" || hasCheckedUpdate.current) return;
 
     hasCheckedUpdate.current = true;
 
@@ -184,6 +215,7 @@ function RootLayoutContent() {
     <NavigationThemeProvider value={navTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="reset-password" />
         <Stack.Screen name="modal" options={{ presentation: "modal" }} />
         <Stack.Screen
           name="add-transaction"

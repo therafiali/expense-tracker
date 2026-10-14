@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
 
 // Custom storage to avoid "window is not defined" error during static rendering (SSR/SSG)
 const ExpoStorage = {
@@ -33,6 +33,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: ExpoStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    // Web recovery links put tokens in the URL hash. Native handles that in auth-link.
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });

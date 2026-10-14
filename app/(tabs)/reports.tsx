@@ -32,6 +32,15 @@ import { useTheme } from '@/lib/theme';
 import { DATA_SYNCED_EVENT } from '@/lib/sync';
 import { useScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
 
+function openReportInBrowser(html: string) {
+  if (typeof window === 'undefined') return;
+  const popup = window.open('', '_blank');
+  if (!popup) return;
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+}
+
 export default function ReportsScreen() {
   const scrollRef = useScrollToTopOnFocus();
   const router = useRouter();
@@ -131,6 +140,10 @@ export default function ReportsScreen() {
       </body></html>
     `;
     try {
+      if (Platform.OS === 'web') {
+        openReportInBrowser(html);
+        return;
+      }
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Export Report' });
     } catch (e) {
@@ -180,6 +193,10 @@ export default function ReportsScreen() {
     `;
 
     try {
+      if (Platform.OS === 'web') {
+        openReportInBrowser(html);
+        return;
+      }
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Export Goal Report' });
     } catch (e) {
