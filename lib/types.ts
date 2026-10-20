@@ -62,6 +62,26 @@ export interface GoalProgressEntry {
   updatedAt: string;
 }
 
+/**
+ * Daily prompt that asks for an expense at a set time.
+ * Stored on this device. The user can add as many as they want.
+ */
+export interface ExpensePrompt {
+  id: string;
+  /** Shown on the popup and used as the default expense name. Example: Lunch */
+  title: string;
+  /** Time of day as HH:mm, local time. Example: 14:20 */
+  time: string;
+  /** Expense category applied when the popup is saved. */
+  category?: string;
+  enabled: boolean;
+  isActive: boolean;
+  /** Local date yyyy-MM-dd when the user saved or skipped this prompt. */
+  lastHandledOn?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** One-time date, same calendar day each month, or every N days. */
 export type ReminderKind = 'once' | 'monthly' | 'interval';
 

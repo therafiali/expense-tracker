@@ -291,6 +291,7 @@ const FIXED_APP_KEYS = [
   'goals_v1',
   'goal_progress_v1',
   'reminders_v1',
+  'expense_prompts_v1',
 ] as const;
 
 /** Removes month buckets, custom categories, recent notes, and cached profile. Keeps theme and Supabase session. */

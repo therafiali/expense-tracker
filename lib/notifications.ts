@@ -1,7 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import type { Goal, GoalReminderSlot, Reminder } from './types';
+import type { ExpensePrompt, Goal, GoalReminderSlot, Reminder } from './types';
 import { getActiveGoals } from './goals';
+import { getActiveExpensePrompts } from './expense-prompts';
 import {
   getActiveReminders,
   getReminderScheduleDates,
@@ -212,6 +213,20 @@ function reminderBody(reminder: Reminder): string {
   return 'Scheduled reminder';
 }
 
+async function scheduleExpensePrompt(prompt: ExpensePrompt): Promise<void> {
+  if (!prompt.enabled || !prompt.isActive) return;
+  const { hour, minute } = parseTime(prompt.time);
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: prompt.title,
+      body: `Add what you spent on ${prompt.title}`,
+      sound: true,
+      data: { kind: 'expense-prompt', promptId: prompt.id },
+    },
+    trigger: dailyTrigger(hour, minute),
+  });
+}
+
 async function scheduleUserReminder(reminder: Reminder): Promise<void> {
   if (!reminder.enabled || !reminder.isActive) return;
 
@@ -258,6 +273,10 @@ export async function resyncNotificationSchedules() {
   const reminders = await getActiveReminders();
   for (const reminder of reminders) {
     await scheduleUserReminder(reminder);
+  }
+  const expensePrompts = await getActiveExpensePrompts();
+  for (const prompt of expensePrompts) {
+    await scheduleExpensePrompt(prompt);
   }
 }
 

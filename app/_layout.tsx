@@ -1,3 +1,4 @@
+import { ExpensePromptHost } from "@/components/expense-prompt-host";
 import { ToastHost } from "@/components/toast-host";
 import { requestPermissions, resyncNotificationSchedules, scheduleDailyReminder } from "@/lib/notifications";
 import { getUserProfile } from "@/lib/storage";
@@ -238,9 +239,17 @@ function RootLayoutContent() {
             animation: "slide_from_bottom",
           }}
         />
+        <Stack.Screen
+          name="add-expense-prompt"
+          options={{
+            presentation: "modal",
+            animation: "slide_from_bottom",
+          }}
+        />
       </Stack>
       <StatusBar style={isDark ? "light" : "dark"} />
       <ToastHost />
+      <ExpensePromptHost />
     </NavigationThemeProvider>
   );
 }

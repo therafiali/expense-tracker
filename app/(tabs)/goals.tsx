@@ -11,6 +11,13 @@ import {
   syncGoalReminderSchedules,
 } from "@/lib/notifications";
 import {
+  archiveExpensePrompt,
+  EXPENSE_PROMPTS_CHANGED_EVENT,
+  formatExpensePromptSchedule,
+  getActiveExpensePrompts,
+  setExpensePromptEnabled,
+} from "@/lib/expense-prompts";
+import {
   archiveReminder,
   formatReminderSchedule,
   getActiveReminders,
@@ -20,7 +27,7 @@ import {
   sortReminders,
 } from "@/lib/reminders";
 import { useTheme } from "@/lib/theme";
-import { Goal, Reminder } from "@/lib/types";
+import { ExpensePrompt, Goal, Reminder } from "@/lib/types";
 import { DATA_SYNCED_EVENT } from "@/lib/sync";
 import { useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
@@ -38,7 +45,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type ScreenTab = "goals" | "reminders";
+type ScreenTab = "goals" | "reminders" | "expenses";
+
+const TAB_LABEL: Record<ScreenTab, string> = {
+  goals: "Goals",
+  reminders: "Reminders",
+  expenses: "Expenses",
+};
 
 const PERIOD_LABEL: Record<Goal["period"], string> = {
   daily: "day",
@@ -180,6 +193,98 @@ function GoalCard({
   );
 }
 
+function ExpensePromptCard({
+  prompt,
+  onEdit,
+  onDelete,
+  onToggle,
+}: {
+  prompt: ExpensePrompt;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggle: (enabled: boolean) => void;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      style={[
+        styles.goalCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+      onPress={onEdit}
+    >
+      <View style={styles.goalHeader}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
+          <Text style={[styles.goalTitle, { color: colors.text }]}>
+            {prompt.title}
+          </Text>
+          <Text style={[styles.goalMeta, { color: colors.muted }]}>
+            {prompt.category ? `${prompt.category}, daily expense` : "Daily expense"}
+          </Text>
+        </View>
+        <View style={styles.goalRemindFlag}>
+          {prompt.enabled ? (
+            <Bell size={17} color={colors.primary} />
+          ) : (
+            <BellOff size={17} color={colors.muted} />
+          )}
+        </View>
+      </View>
+
+      <View
+        style={[
+          styles.statsCard,
+          {
+            backgroundColor: colors.card2,
+            borderColor: colors.border,
+            flexDirection: "column",
+            alignItems: "flex-start",
+          },
+        ]}
+      >
+        <Text style={[styles.reminderDue, { color: colors.text }]}>
+          {formatExpensePromptSchedule(prompt)}
+        </Text>
+      </View>
+
+      <View style={styles.actionsRow}>
+        <TouchableOpacity
+          style={[
+            styles.doneBtn,
+            {
+              backgroundColor: prompt.enabled
+                ? colors.primaryMuted
+                : colors.card2,
+              borderColor: colors.border,
+            },
+          ]}
+          onPress={() => onToggle(!prompt.enabled)}
+        >
+          <Text
+            style={[
+              styles.doneBtnLabel,
+              { color: prompt.enabled ? colors.primary : colors.muted },
+            ]}
+          >
+            {prompt.enabled ? "On" : "Off"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.roundBtn,
+            { borderColor: colors.border, backgroundColor: colors.card2 },
+          ]}
+          onPress={onDelete}
+        >
+          <Text style={[styles.deleteText, { color: "#EF4444" }]}>×</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function ReminderCard({
   reminder,
   onEdit,
@@ -290,6 +395,7 @@ export default function GoalsScreen() {
   const [loading, setLoading] = useState(false);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [expensePrompts, setExpensePrompts] = useState<ExpensePrompt[]>([]);
   const [summaries, setSummaries] = useState<
     Record<string, { totalDone: number; thisMonthDone: number }>
   >({});
@@ -314,6 +420,7 @@ export default function GoalsScreen() {
     );
     const nextReminders = await getActiveReminders();
     setReminders(sortReminders(nextReminders));
+    setExpensePrompts(await getActiveExpensePrompts());
     setLoading(false);
   }, []);
 
@@ -330,8 +437,20 @@ export default function GoalsScreen() {
     return () => sub.remove();
   }, [isFocused, loadGoals]);
 
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(EXPENSE_PROMPTS_CHANGED_EVENT, () => {
+      if (!isFocused) return;
+      void getActiveExpensePrompts().then(setExpensePrompts);
+    });
+    return () => sub.remove();
+  }, [isFocused]);
+
   const hasGoals = useMemo(() => goals.length > 0, [goals]);
   const hasReminders = useMemo(() => reminders.length > 0, [reminders]);
+  const hasExpensePrompts = useMemo(
+    () => expensePrompts.length > 0,
+    [expensePrompts],
+  );
 
   const updateAndResync = useCallback(async () => {
     const latest = await getActiveGoals();
@@ -367,6 +486,21 @@ export default function GoalsScreen() {
     }
   }, []);
 
+  const refreshExpensePrompts = useCallback(async () => {
+    setExpensePrompts(await getActiveExpensePrompts());
+    const hasPermission = await requestPermissions();
+    if (hasPermission) {
+      await resyncNotificationSchedules();
+    }
+  }, []);
+
+  const addPath =
+    tab === "goals"
+      ? "/add-goal"
+      : tab === "reminders"
+        ? "/add-reminder"
+        : "/add-expense-prompt";
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.bg }]}
@@ -386,19 +520,23 @@ export default function GoalsScreen() {
         <View style={styles.headerRow}>
           <View>
             <Text style={[styles.heading, { color: colors.text }]}>
-              {tab === "goals" ? "Goals" : "Reminders"}
+              {tab === "goals"
+                ? "Goals"
+                : tab === "reminders"
+                  ? "Reminders"
+                  : "Expense prompts"}
             </Text>
             <Text style={[styles.subheading, { color: colors.muted }]}>
               {tab === "goals"
                 ? "Build habits with daily, weekly, monthly targets"
-                : "One-time dates, monthly bills, or jobs like bike oil"}
+                : tab === "reminders"
+                  ? "One-time dates, monthly bills, or jobs like bike oil"
+                  : "Daily popups that ask for a name and amount"}
             </Text>
           </View>
           <TouchableOpacity
             style={[styles.addTopBtn, { backgroundColor: colors.primary }]}
-            onPress={() =>
-              router.push(tab === "goals" ? "/add-goal" : "/add-reminder")
-            }
+            onPress={() => router.push(addPath)}
           >
             <Plus size={20} color={colors.primaryForeground} />
           </TouchableOpacity>
@@ -410,7 +548,7 @@ export default function GoalsScreen() {
             { backgroundColor: colors.card2, borderColor: colors.border },
           ]}
         >
-          {(["goals", "reminders"] as ScreenTab[]).map((item) => {
+          {(["goals", "reminders", "expenses"] as ScreenTab[]).map((item) => {
             const active = tab === item;
             return (
               <TouchableOpacity
@@ -425,17 +563,77 @@ export default function GoalsScreen() {
                   style={{
                     color: active ? colors.primaryForeground : colors.text,
                     fontWeight: "800",
-                    fontSize: 13,
+                    fontSize: 12,
                   }}
                 >
-                  {item === "goals" ? "Goals" : "Reminders"}
+                  {TAB_LABEL[item]}
                 </Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {tab === "reminders" ? (
+        {tab === "expenses" ? (
+          !hasExpensePrompts ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                No expense prompts yet
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.muted }]}>
+                Add lunch at 2:20, dinner at night, or anything else. Each one
+                opens a popup so you can enter the name and amount.
+              </Text>
+              <TouchableOpacity
+                style={[styles.createBtn, { backgroundColor: colors.primary }]}
+                onPress={() => router.push("/add-expense-prompt")}
+              >
+                <Text
+                  style={[
+                    styles.createBtnText,
+                    { color: colors.primaryForeground },
+                  ]}
+                >
+                  Create prompt
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            expensePrompts.map((prompt) => (
+              <ExpensePromptCard
+                key={prompt.id}
+                prompt={prompt}
+                onEdit={() =>
+                  router.push({
+                    pathname: "/add-expense-prompt",
+                    params: { promptId: prompt.id },
+                  })
+                }
+                onToggle={async (enabled) => {
+                  await setExpensePromptEnabled(prompt.id, enabled);
+                  await refreshExpensePrompts();
+                }}
+                onDelete={() =>
+                  Alert.alert("Delete prompt?", `Remove "${prompt.title}"`, [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: async () => {
+                        await archiveExpensePrompt(prompt.id);
+                        await refreshExpensePrompts();
+                      },
+                    },
+                  ])
+                }
+              />
+            ))
+          )
+        ) : tab === "reminders" ? (
           !hasReminders ? (
             <View
               style={[
