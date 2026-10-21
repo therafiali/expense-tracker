@@ -10,6 +10,7 @@ import {
   setMilliseconds,
 } from 'date-fns';
 import type { Reminder, ReminderKind } from './types';
+import { fireAtFromDateKey, PETROL_REFUEL_REMINDER_ID, PETROL_REFUEL_TIME } from './fuel';
 import { pushReminder, requestSyncNow } from './sync';
 
 const REMINDERS_STORAGE_KEY = 'reminders_v1';
@@ -262,7 +263,7 @@ export async function upsertReminder(input: UpsertReminderInput): Promise<Remind
   }
 
   const reminder: Reminder = {
-    id: generateReminderId(),
+    id: input.id || generateReminderId(),
     title,
     note: input.note?.trim() || undefined,
     kind: input.kind,
@@ -281,6 +282,21 @@ export async function upsertReminder(input: UpsertReminderInput): Promise<Remind
   pushReminder(reminder).catch((err) => console.error('Reminder sync failed:', err));
   requestSyncNow();
   return reminder;
+}
+
+/** Updates the single Refuel reminder to the date chosen on the petrol expense. */
+export async function savePetrolRefuelReminder(dateKey: string): Promise<Reminder | null> {
+  const fireAt = fireAtFromDateKey(dateKey, PETROL_REFUEL_TIME);
+  if (!fireAt) return null;
+  return upsertReminder({
+    id: PETROL_REFUEL_REMINDER_ID,
+    title: 'Refuel',
+    note: 'Next fuel refill',
+    kind: 'once',
+    time: PETROL_REFUEL_TIME,
+    fireAt,
+    enabled: true,
+  });
 }
 
 export async function markReminderDone(id: string): Promise<Reminder | null> {

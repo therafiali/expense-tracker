@@ -66,6 +66,17 @@ import {
 import { useTheme } from '@/lib/theme';
 import { radii } from '@/constants/designTokens';
 import { useScrollToTopOnFocus } from '@/hooks/use-scroll-to-top-on-focus';
+import { DayCalendarModal } from '@/components/day-calendar-modal';
+import {
+  dateFromKey,
+  formatDateKey,
+  formatPetrolDays,
+  isPetrolCategory,
+  suggestedRefuelDate,
+  toDateKey,
+} from '@/lib/fuel';
+import { requestPermissions, resyncNotificationSchedules } from '@/lib/notifications';
+import { savePetrolRefuelReminder } from '@/lib/reminders';
 
 const ICON_MAP: Record<string, any> = {
   Fuel,
@@ -118,6 +129,9 @@ export default function AddTransactionScreen() {
   const [categories, setCategories] = useState<any[]>([]);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  const [refuelDate, setRefuelDate] = useState('');
+  const [refuelTouched, setRefuelTouched] = useState(false);
+  const [showRefuelPicker, setShowRefuelPicker] = useState(false);
 
   const noteRef = useRef<TextInput>(null);
   const amountRef = useRef<TextInput>(null);
@@ -194,6 +208,17 @@ export default function AddTransactionScreen() {
     if (type === 'income') setSelectedCategory(null);
   }, [type]);
 
+  useEffect(() => {
+    if (type !== 'expense' || !isPetrolCategory(selectedCategory)) {
+      setRefuelTouched(false);
+      setRefuelDate('');
+      return;
+    }
+    if (refuelTouched) return;
+    const suggested = suggestedRefuelDate(parseFloat(amount), txDate);
+    setRefuelDate(suggested ? toDateKey(suggested) : '');
+  }, [type, selectedCategory, amount, txDate, refuelTouched]);
+
   const handleCategorySelect = (catId: string) => {
     setSelectedCategory(catId);
     // Auto-open keyboard on the note field
@@ -268,6 +293,16 @@ export default function AddTransactionScreen() {
         paidWith: paidWithValue,
       });
     }
+
+    if (type === 'expense' && isPetrolCategory(selectedCategory) && refuelDate) {
+      try {
+        await savePetrolRefuelReminder(refuelDate);
+        const hasPermission = await requestPermissions();
+        if (hasPermission) await resyncNotificationSchedules();
+      } catch (error) {
+        console.warn('[fuel] reminder save failed:', error);
+      }
+    }
     return true;
   };
 
@@ -283,6 +318,7 @@ export default function AddTransactionScreen() {
       if (addAnother && !isEditMode) {
         setNote('');
         setAmount('');
+        setRefuelTouched(false);
         const notes = await getRecentNotes();
         setAllRecentNotes(notes);
         setTimeout(() => amountRef.current?.focus(), 50);
@@ -461,6 +497,25 @@ export default function AddTransactionScreen() {
                   </View>
                 )}
               </View>
+              {isPetrolCategory(selectedCategory) ? (
+                <View style={styles.fuelBlock}>
+                  <Text style={[styles.fuelHint, { color: colors.subtext }]}>
+                    {formatPetrolDays(parseFloat(amount))}
+                  </Text>
+                  {refuelDate ? (
+                    <View>
+                      <Text style={[styles.refuelLabel, { color: colors.muted }]}>Next refuel</Text>
+                      <TouchableOpacity
+                        style={[styles.noteInput, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        onPress={() => setShowRefuelPicker(true)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={{ color: colors.text, fontSize: 15 }}>{formatDateKey(refuelDate)}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           )}
 
@@ -800,6 +855,16 @@ export default function AddTransactionScreen() {
             </TouchableOpacity>
           ) : null}
         </ScrollView>
+        <DayCalendarModal
+          visible={showRefuelPicker}
+          value={dateFromKey(refuelDate) ?? txDate}
+          onClose={() => setShowRefuelPicker(false)}
+          onSelect={(day) => {
+            setRefuelTouched(true);
+            setRefuelDate(toDateKey(day));
+            setShowRefuelPicker(false);
+          }}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -892,6 +957,19 @@ const styles = StyleSheet.create({
   categoryLabelSmall: {
     fontSize: 12,
     flex: 1,
+  },
+  fuelBlock: {
+    marginTop: 10,
+    gap: 10,
+  },
+  fuelHint: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  refuelLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
   },
   newCatInputContainer: {
     flexDirection: 'row',

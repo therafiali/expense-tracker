@@ -27,6 +27,17 @@ import { useTheme } from '@/lib/theme';
 import { getCategories, saveTransaction } from '@/lib/storage';
 import { chartGradients, radii } from '@/constants/designTokens';
 import { Fonts } from '@/constants/fonts';
+import { DayCalendarModal } from '@/components/day-calendar-modal';
+import {
+  dateFromKey,
+  formatDateKey,
+  formatPetrolDays,
+  isPetrolCategory,
+  suggestedRefuelDate,
+  toDateKey,
+} from '@/lib/fuel';
+import { requestPermissions, resyncNotificationSchedules } from '@/lib/notifications';
+import { savePetrolRefuelReminder } from '@/lib/reminders';
 
 /** Emitted after a quick-add save so home screen can refresh. */
 export const QUICK_ADD_SAVED_EVENT = 'quick_add_saved';
@@ -65,6 +76,9 @@ export function QuickAddSheet({ visible, onClose }: QuickAddSheetProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
+  const [refuelDate, setRefuelDate] = useState('');
+  const [refuelTouched, setRefuelTouched] = useState(false);
+  const [showRefuelPicker, setShowRefuelPicker] = useState(false);
 
   // Reset state every time sheet opens
   useEffect(() => {
@@ -73,6 +87,9 @@ export function QuickAddSheet({ visible, onClose }: QuickAddSheetProps) {
       setAmount('');
       setSelectedCategory(null);
       setType('expense');
+      setRefuelDate('');
+      setRefuelTouched(false);
+      setShowRefuelPicker(false);
     }
   }, [visible]);
 
@@ -80,6 +97,17 @@ export function QuickAddSheet({ visible, onClose }: QuickAddSheetProps) {
   useEffect(() => {
     if (type === 'income') setSelectedCategory(null);
   }, [type]);
+
+  useEffect(() => {
+    if (type !== 'expense' || !isPetrolCategory(selectedCategory)) {
+      setRefuelTouched(false);
+      setRefuelDate('');
+      return;
+    }
+    if (refuelTouched) return;
+    const suggested = suggestedRefuelDate(Number(amount), new Date());
+    setRefuelDate(suggested ? toDateKey(suggested) : '');
+  }, [type, selectedCategory, amount, refuelTouched]);
 
   const handleNumpad = useCallback((key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -115,6 +143,15 @@ export function QuickAddSheet({ visible, onClose }: QuickAddSheetProps) {
         type,
         paidWith: type === 'expense' ? 'cash' : undefined,
       });
+      if (type === 'expense' && isPetrolCategory(selectedCategory) && refuelDate) {
+        try {
+          await savePetrolRefuelReminder(refuelDate);
+          const hasPermission = await requestPermissions();
+          if (hasPermission) await resyncNotificationSchedules();
+        } catch (error) {
+          console.warn('[fuel] reminder save failed:', error);
+        }
+      }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       DeviceEventEmitter.emit(QUICK_ADD_SAVED_EVENT);
       onClose();
@@ -282,6 +319,28 @@ export function QuickAddSheet({ visible, onClose }: QuickAddSheetProps) {
           </ScrollView>
         )}
 
+        {type === 'expense' && isPetrolCategory(selectedCategory) ? (
+          <View style={styles.fuelBlock}>
+            <Text style={[styles.fuelHint, { color: colors.subtext, fontFamily: Fonts.medium }]}>
+              {formatPetrolDays(Number(amount))}
+            </Text>
+            {refuelDate ? (
+              <TouchableOpacity
+                style={[styles.refuelBtn, { backgroundColor: colors.bg, borderColor: colors.border }]}
+                onPress={() => setShowRefuelPicker(true)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.refuelLabel, { color: colors.muted, fontFamily: Fonts.semibold }]}>
+                  Next refuel
+                </Text>
+                <Text style={[styles.refuelDate, { color: colors.text, fontFamily: Fonts.bold }]}>
+                  {formatDateKey(refuelDate)}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* Numpad */}
         <View style={styles.numpad}>
           {NUMPAD_ROWS.map((row, ri) => (
@@ -342,6 +401,16 @@ export function QuickAddSheet({ visible, onClose }: QuickAddSheetProps) {
           </LinearGradient>
         </TouchableOpacity>
       </View>
+      <DayCalendarModal
+        visible={showRefuelPicker}
+        value={dateFromKey(refuelDate) ?? new Date()}
+        onClose={() => setShowRefuelPicker(false)}
+        onSelect={(day) => {
+          setRefuelTouched(true);
+          setRefuelDate(toDateKey(day));
+          setShowRefuelPicker(false);
+        }}
+      />
     </Modal>
   );
 }
@@ -426,6 +495,30 @@ const styles = StyleSheet.create({
   },
   catChipText: {
     fontSize: 13,
+  },
+  fuelBlock: {
+    marginTop: -4,
+    marginBottom: 12,
+    gap: 8,
+  },
+  fuelHint: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  refuelBtn: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 2,
+  },
+  refuelLabel: {
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  refuelDate: {
+    fontSize: 15,
   },
   numpad: {
     gap: 8,
